@@ -1,6 +1,6 @@
 """Tests for clip_zeroshot.py (SigLIPClassifier).
 
-Uses a mock model/processor so no HuggingFace download is needed.
+Uses a mock model/processor so no HuggingFace download or PyTorch is needed.
 """
 
 from __future__ import annotations
@@ -15,31 +15,80 @@ import pandas as pd
 from PIL import Image
 
 
-def _make_fake_transformers():
-    """Return a mock transformers module with a minimal SigLIP implementation."""
+# ---------------------------------------------------------------------------
+# Shared fake tensor
+# ---------------------------------------------------------------------------
 
+class _FakeTensor:
+    """Minimal stand-in for torch.Tensor that supports .cpu().numpy()."""
+
+    def __init__(self, data):
+        self._data = np.asarray(data, dtype=np.float32)
+
+    @property
+    def shape(self):
+        return self._data.shape
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self._data
+
+    def softmax(self, dim):
+        e = np.exp(self._data - self._data.max(axis=dim, keepdims=True))
+        return _FakeTensor(e / e.sum(axis=dim, keepdims=True))
+
+    def to(self, device):
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Fake torch module
+# ---------------------------------------------------------------------------
+
+class _NoGradCtx:
+    """Context manager stand-in for torch.no_grad()."""
+    def __enter__(self):
+        return self
+    def __exit__(self, *_):
+        pass
+
+
+def _make_fake_torch():
+    mock_torch = types.ModuleType("torch")
+    mock_torch.no_grad = _NoGradCtx
+    mock_torch.cuda = MagicMock()
+    mock_torch.cuda.is_available = MagicMock(return_value=False)
+    mock_torch.sigmoid = lambda t: _FakeTensor(
+        1.0 / (1.0 + np.exp(-t._data if isinstance(t, _FakeTensor) else np.asarray(t)))
+    )
+    mock_torch.Tensor = _FakeTensor
+    return mock_torch
+
+
+# ---------------------------------------------------------------------------
+# Fake transformers module
+# ---------------------------------------------------------------------------
+
+def _make_fake_transformers():
     class FakeProcessor:
         def __call__(self, text, images, return_tensors, padding):
-            import torch
-
             B = len(images)
             L = len(text)
             return {
-                "input_ids": torch.zeros(L, 10, dtype=torch.long),
-                "pixel_values": torch.zeros(B, 3, 224, 224),
-                "attention_mask": torch.ones(L, 10, dtype=torch.long),
+                "input_ids": _FakeTensor(np.zeros((L, 10), dtype=np.int64)),
+                "pixel_values": _FakeTensor(np.zeros((B, 3, 224, 224), dtype=np.float32)),
+                "attention_mask": _FakeTensor(np.ones((L, 10), dtype=np.int64)),
             }
 
     class FakeOutput:
         def __init__(self, B, L):
-            import torch
-
-            self.logits_per_image = torch.rand(B, L)
+            self.logits_per_image = _FakeTensor(
+                np.random.rand(B, L).astype(np.float32)
+            )
 
     class FakeModel:
-        def __init__(self):
-            self._device = "cpu"
-
         def to(self, device):
             return self
 
@@ -47,15 +96,9 @@ def _make_fake_transformers():
             return self
 
         def __call__(self, **kwargs):
-            import torch
-
             B = kwargs["pixel_values"].shape[0]
             L = kwargs["input_ids"].shape[0]
             return FakeOutput(B, L)
-
-        def parameters(self):
-            import torch
-            return iter([torch.tensor([0.0])])
 
     mock_tf = types.ModuleType("transformers")
     mock_tf.AutoProcessor = MagicMock()
@@ -67,18 +110,26 @@ def _make_fake_transformers():
     return mock_tf
 
 
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
 class TestSigLIPClassifier(unittest.TestCase):
 
     def setUp(self):
+        self.mock_torch = _make_fake_torch()
         self.mock_tf = _make_fake_transformers()
-        # Patch sys.modules so that 'import transformers' inside clip_zeroshot returns our mock
-        self.patcher = patch.dict("sys.modules", {"transformers": self.mock_tf})
+        self.patcher = patch.dict(
+            "sys.modules",
+            {
+                "transformers": self.mock_tf,
+                "torch": self.mock_torch,
+            },
+        )
         self.patcher.start()
-        # Reload the module with patched transformers
         if "pet_behavior_clip.clip_zeroshot" in sys.modules:
             del sys.modules["pet_behavior_clip.clip_zeroshot"]
         from pet_behavior_clip import clip_zeroshot
-
         self.module = clip_zeroshot
 
     def tearDown(self):
