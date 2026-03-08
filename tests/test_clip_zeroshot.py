@@ -220,6 +220,55 @@ class TestSigLIPClassifier(unittest.TestCase):
         self.assertGreater(probs[0, 0], 0.5)
         self.assertLess(probs[0, 1], 0.5)
 
+    def test_siglip_normalized_scores_sum_to_one(self):
+        """With normalize=True (default), SigLIP scores per frame should sum to 1."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu", normalize=True)
+        frames = self._make_frames(4)
+        labels = ["dog sitting", "dog running", "dog barking"]
+        df = clf.classify_frames(frames, labels)
+        row_sums = df[labels].sum(axis=1)
+        for s in row_sums:
+            self.assertAlmostEqual(s, 1.0, places=5)
+
+    def test_siglip_normalize_false_does_not_enforce_sum(self):
+        """With normalize=False, SigLIP raw sigmoid scores need not sum to 1."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu", normalize=False)
+        frames = self._make_frames(4)
+        labels = ["dog sitting", "dog running", "dog barking"]
+        df = clf.classify_frames(frames, labels)
+        # Raw sigmoid values can be anywhere; just verify they are in [0, 1].
+        for col in labels:
+            self.assertTrue((df[col] >= 0).all())
+            self.assertTrue((df[col] <= 1).all())
+
+    def test_siglip_normalize_dominant_label_wins(self):
+        """Normalized scores should rank labels correctly (highest logit → highest prob)."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu", normalize=True)
+
+        # Manufacture a single frame with known logits: label_a >> label_b
+        fixed_logits = np.array([[5.0, -5.0]], dtype=np.float32)
+
+        class _FixedModel:
+            def __call__(self, **kwargs):
+                return types.SimpleNamespace(
+                    logits_per_image=_FakeTensor(fixed_logits)
+                )
+            logit_bias = None
+
+        clf._load = lambda: None  # skip real load
+        clf._model = _FixedModel()
+        clf._model_type = "siglip"
+        clf._processor = MagicMock(return_value={
+            "pixel_values": _FakeTensor(np.zeros((1, 3, 224, 224))),
+            "input_ids": _FakeTensor(np.zeros((2, 10))),
+            "attention_mask": _FakeTensor(np.ones((2, 10))),
+        })
+        clf._device = "cpu"
+
+        probs = clf._score_batch([Image.new("RGB", (224, 224))], ["label_a", "label_b"])
+        self.assertGreater(probs[0, 0], probs[0, 1])
+        self.assertAlmostEqual(probs[0, 0] + probs[0, 1], 1.0, places=5)
+
 
 if __name__ == "__main__":
     unittest.main()
