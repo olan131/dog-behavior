@@ -87,6 +87,58 @@ class TestPromptLLM(unittest.TestCase):
         out = aggregate_prompt_scores(df, prompt_map, reducer="mean")
         self.assertAlmostEqual(out.loc[0, "Active"], 0.5)
 
+    def test_template_mode_dog_behavior_labels(self):
+        """Template mode should generate rich prompts for common dog behaviors."""
+        dog_labels = [
+            "sitting",
+            "walking",
+            "running",
+            "barking",
+            "limping",
+            "scratching",
+            "shaking",
+            "lying down",
+        ]
+        prompt_map = build_label_prompt_map(dog_labels, mode="template")
+        for label in dog_labels:
+            self.assertIn(label, prompt_map)
+            # Each known dog behavior must have at least 5 specific prompts.
+            self.assertGreaterEqual(
+                len(prompt_map[label]),
+                5,
+                msg=f"Label '{label}' has only {len(prompt_map[label])} prompts",
+            )
+
+    def test_template_mode_dog_behavior_prompts_are_descriptive(self):
+        """Prompts for dog behaviors should mention the dog and behavior keyword."""
+        specific_checks = {
+            "limping": "limp",
+            "barking": "bark",
+            "scratching": "scratch",
+            "shaking": "shake",
+        }
+        for label, keyword in specific_checks.items():
+            prompt_map = build_label_prompt_map([label], mode="template")
+            prompts = prompt_map[label]
+            has_keyword = any(keyword in p.lower() for p in prompts)
+            self.assertTrue(
+                has_keyword,
+                msg=f"No prompt for '{label}' contains keyword '{keyword}'",
+            )
+
+    def test_template_mode_known_labels_not_generic(self):
+        """Known dog behavior labels should not fall back to the generic template."""
+        known_labels = ["sitting", "walking", "running", "barking", "limping",
+                        "scratching", "shaking", "lying down"]
+        prompt_map = build_label_prompt_map(known_labels, mode="template")
+        for label in known_labels:
+            for prompt in prompt_map[label]:
+                self.assertNotIn(
+                    "dog behavior category",
+                    prompt,
+                    msg=f"Label '{label}' used generic fallback prompt: {prompt}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

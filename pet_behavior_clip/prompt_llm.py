@@ -197,6 +197,14 @@ def _template_variants_for_label(label: str, camera_context: str) -> List[str]:
     active_keys = {"active", "activity", "moving", "play"}
     resting_keys = {"resting", "rest", "sleep", "calm", "idle"}
     eat_keys = {"eating/drinking", "eating", "drinking", "feeding"}
+    sit_keys = {"sitting", "sit"}
+    walk_keys = {"walking", "walk", "walking normally"}
+    run_keys = {"running", "run"}
+    bark_keys = {"barking", "bark"}
+    limp_keys = {"limping", "limp"}
+    scratch_keys = {"scratching", "scratch"}
+    shake_keys = {"shaking", "shake", "trembling", "tremble"}
+    lying_keys = {"lying down", "lying", "laid down"}
 
     if key in active_keys:
         actions = [
@@ -221,6 +229,70 @@ def _template_variants_for_label(label: str, camera_context: str) -> List[str]:
             "dog head is lowered at food or water station",
             "dog repeatedly licks or chews near the bowl",
             "dog is engaged in feeding behavior",
+        ]
+    elif key in sit_keys:
+        actions = [
+            "dog is sitting still",
+            "dog is in a seated position with hindquarters on the ground",
+            "dog sitting upright and alert",
+            "dog sits calmly in place",
+            "dog adopts a still, seated posture",
+        ]
+    elif key in walk_keys:
+        actions = [
+            "dog is walking at a normal pace",
+            "dog moves steadily with all four legs in regular rhythm",
+            "dog walking with even, balanced gait",
+            "dog strolls without any sign of discomfort",
+            "dog locomotion appears smooth and symmetrical",
+        ]
+    elif key in run_keys:
+        actions = [
+            "dog is running quickly",
+            "dog gallops or sprints across the area",
+            "dog moves at high speed with extended strides",
+            "dog is dashing or chasing",
+            "dog runs with energetic, rapid movement",
+        ]
+    elif key in bark_keys:
+        actions = [
+            "dog is barking with mouth open",
+            "dog vocalises repeatedly with open mouth",
+            "dog stands alert and barks at something",
+            "dog displays barking posture with raised head",
+            "dog shows agitated barking behavior",
+        ]
+    elif key in limp_keys:
+        actions = [
+            "dog is limping and favouring one leg",
+            "dog walks with an uneven, irregular gait",
+            "dog shows lameness by lifting or sparing one paw",
+            "dog movement is asymmetrical due to leg pain",
+            "dog exhibits abnormal weight-bearing while walking",
+        ]
+    elif key in scratch_keys:
+        actions = [
+            "dog is scratching itself with its paw",
+            "dog repeatedly scratches an area of its body",
+            "dog rubs or scratches head, ear, or flank",
+            "dog displays itching behaviour with vigorous scratching",
+            "dog pauses movement to scratch persistently",
+        ]
+    elif key in shake_keys:
+        actions = [
+            "dog is shaking or trembling its body",
+            "dog shakes its whole body rapidly",
+            "dog shows repetitive trembling motion",
+            "dog quivers or vibrates unusually",
+            "dog exhibits uncontrolled body shaking",
+        ]
+    elif key in lying_keys:
+        actions = [
+            "dog is lying flat on the ground",
+            "dog lies down with body fully extended",
+            "dog is in a prone position on the floor",
+            "dog rests stretched out on its side or belly",
+            "dog adopts a flat, recumbent posture",
         ]
     else:
         actions = [

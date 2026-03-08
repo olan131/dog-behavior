@@ -42,6 +42,12 @@ class SigLIPClassifier:
         ``"cpu"`` or ``"cuda"``.  Detected automatically when *None*.
     batch_size:
         Number of frames processed in a single forward pass.
+    normalize:
+        When ``True`` (default), SigLIP sigmoid probabilities are normalized
+        across labels so they sum to 1 per frame.  This makes per-label scores
+        directly comparable and improves classification accuracy when labels are
+        mutually exclusive.  Has no effect for CLIP (which already uses
+        softmax).
     """
 
     def __init__(
@@ -49,10 +55,12 @@ class SigLIPClassifier:
         model_name: str = _DEFAULT_MODEL,
         device: Optional[str] = None,
         batch_size: int = 8,
+        normalize: bool = True,
     ) -> None:
         self.model_name = model_name
         self.batch_size = batch_size
         self._device = device
+        self.normalize = normalize
         self._processor = None
         self._model = None
         self._model_type: str = "siglip"
@@ -174,6 +182,12 @@ class SigLIPClassifier:
                 if model_bias is not None:
                     logits = logits + model_bias
                 probs = torch.sigmoid(logits).cpu().numpy()
+                if self.normalize:
+                    # Normalize across labels so scores sum to 1 per frame,
+                    # making labels directly comparable for classification.
+                    row_sums = probs.sum(axis=1, keepdims=True)
+                    row_sums = np.where(row_sums == 0, 1.0, row_sums)
+                    probs = probs / row_sums
             else:
                 logits = outputs.logits_per_image  # (B, L)
                 probs = logits.softmax(dim=-1).cpu().numpy()
