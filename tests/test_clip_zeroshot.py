@@ -42,12 +42,24 @@ class _FakeTensor:
     def to(self, device):
         return self
 
+    def sum(self, dim=None, keepdim=False):
+        axis = dim
+        return _FakeTensor(self._data.sum(axis=axis, keepdims=keepdim))
+
+    def clamp_min(self, value):
+        return _FakeTensor(np.maximum(self._data, value))
+
     def __add__(self, other):
         if isinstance(other, _FakeTensor):
             return _FakeTensor(self._data + other._data)
         return _FakeTensor(self._data + np.asarray(other))
 
     __radd__ = __add__
+
+    def __truediv__(self, other):
+        if isinstance(other, _FakeTensor):
+            return _FakeTensor(self._data / other._data)
+        return _FakeTensor(self._data / np.asarray(other))
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +92,7 @@ def _make_fake_torch():
 
 def _make_fake_transformers():
     class FakeProcessor:
-        def __call__(self, text, images, return_tensors, padding):
+        def __call__(self, text, images, return_tensors, padding, truncation=False, max_length=None):
             B = len(images)
             L = len(text)
             return {
@@ -197,8 +209,8 @@ class TestSigLIPClassifier(unittest.TestCase):
         df = clf.classify_frames(frames, labels)
         self.assertEqual(len(df), 7)
 
-    def test_siglip_applies_model_logit_bias(self):
-        """SigLIP path should add model.logit_bias before sigmoid."""
+    def test_siglip_does_not_double_apply_model_logit_bias(self):
+        """SigLIP path should not add model.logit_bias on top of logits_per_image."""
         clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu")
 
         class _BiasModel:
@@ -217,8 +229,66 @@ class TestSigLIPClassifier(unittest.TestCase):
         clf._processor = MagicMock(return_value={"dummy": _FakeTensor(np.array([1.0]))})
         probs = clf._score_batch([Image.new("RGB", (224, 224))], ["a", "b"])
 
-        self.assertGreater(probs[0, 0], 0.5)
-        self.assertLess(probs[0, 1], 0.5)
+        self.assertAlmostEqual(float(probs[0, 0]), 0.5, places=5)
+        self.assertAlmostEqual(float(probs[0, 1]), 0.5, places=5)
+
+    def test_processor_called_with_truncation(self):
+        """Text prompts should be truncated to model tokenizer limit."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu")
+
+        proc_calls = {}
+
+        def _proc(*, text, images, return_tensors, padding, truncation, max_length):
+            proc_calls["truncation"] = truncation
+            proc_calls["max_length"] = max_length
+            return {
+                "input_ids": _FakeTensor(np.zeros((len(text), 10), dtype=np.int64)),
+                "pixel_values": _FakeTensor(np.zeros((len(images), 3, 224, 224), dtype=np.float32)),
+                "attention_mask": _FakeTensor(np.ones((len(text), 10), dtype=np.int64)),
+            }
+
+        clf._processor = _proc
+        clf._text_max_length = 16
+
+        class _Model:
+            def __call__(self, **kwargs):
+                return types.SimpleNamespace(
+                    logits_per_image=_FakeTensor(np.zeros((1, 1), dtype=np.float32))
+                )
+
+        clf._model = _Model()
+        clf._model_type = "siglip"
+        clf._score_batch([Image.new("RGB", (224, 224))], ["long long long prompt"])
+
+        self.assertTrue(proc_calls.get("truncation"))
+        self.assertEqual(proc_calls.get("max_length"), 16)
+
+    def test_siglip_outputs_are_row_normalized(self):
+        """SigLIP outputs should sum to ~1 across labels for each frame."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu")
+        clf._model_type = "siglip"
+        clf._processor = MagicMock(
+            return_value={
+                "input_ids": _FakeTensor(np.zeros((3, 10), dtype=np.int64)),
+                "pixel_values": _FakeTensor(np.zeros((2, 3, 224, 224), dtype=np.float32)),
+                "attention_mask": _FakeTensor(np.ones((3, 10), dtype=np.int64)),
+            }
+        )
+
+        class _Model:
+            def __call__(self, **kwargs):
+                return types.SimpleNamespace(
+                    logits_per_image=_FakeTensor(np.array([[-20.0, -18.0, -16.0], [-10.0, -9.0, -8.0]], dtype=np.float32))
+                )
+
+        clf._model = _Model()
+        probs = clf._score_batch(
+            [Image.new("RGB", (224, 224)), Image.new("RGB", (224, 224))],
+            ["a", "b", "c"],
+        )
+
+        row_sums = probs.sum(axis=1)
+        self.assertTrue(np.allclose(row_sums, np.ones_like(row_sums), atol=1e-6))
 
 
 if __name__ == "__main__":

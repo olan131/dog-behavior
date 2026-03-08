@@ -1,13 +1,16 @@
 {
   "total_frames": 27,
-  "anomaly_frames": 1,
-  "anomaly_ratio": 0.037,
+  "anomaly_frames": 2,
+  "anomaly_ratio": 0.0741,
   "duration_seconds": 25.330210772833723,
-  "worst_anomaly_timestamp": 0.0,
+  "worst_anomaly_timestamp": 4.871194379391101,
   "method": "zscore",
   "threshold": 2.5,
   "context_mode": "off",
   "sequence_aggregate": "none",
   "sequence_window": 5,
-  "ece": null
+  "ece": null,
+  "prompt_source": "template",
+  "prompt_fallback_used": false,
+  "prompt_fallback_reason": null
 }

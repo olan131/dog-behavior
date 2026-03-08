@@ -56,6 +56,7 @@ class SigLIPClassifier:
         self._processor = None
         self._model = None
         self._model_type: str = "siglip"
+        self._text_max_length: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Lazy model loading
@@ -91,6 +92,7 @@ class SigLIPClassifier:
         self._model.to(self._device)
         self._model.eval()
         self._model_type = "siglip"
+        self._text_max_length = self._infer_text_max_length()
         logger.info("Loaded SigLIP model: %s on %s", self.model_name, self._device)
 
     def _load_clip(self) -> None:
@@ -101,7 +103,26 @@ class SigLIPClassifier:
         self._model.to(self._device)
         self._model.eval()
         self._model_type = "clip"
+        self._text_max_length = self._infer_text_max_length()
         logger.info("Loaded CLIP model: %s on %s", self.model_name, self._device)
+
+    def _infer_text_max_length(self) -> Optional[int]:
+        """Best-effort lookup for tokenizer/model text position limit."""
+        tokenizer = getattr(self._processor, "tokenizer", None)
+        if tokenizer is not None:
+            tokenizer_limit = getattr(tokenizer, "model_max_length", None)
+            if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 100000:
+                return tokenizer_limit
+
+        config = getattr(self._model, "config", None)
+        text_cfg = getattr(config, "text_config", None) if config is not None else None
+        for cfg in (text_cfg, config):
+            if cfg is None:
+                continue
+            max_positions = getattr(cfg, "max_position_embeddings", None)
+            if isinstance(max_positions, int) and max_positions > 0:
+                return max_positions
+        return None
 
     # ------------------------------------------------------------------
     # Public API
@@ -163,17 +184,19 @@ class SigLIPClassifier:
                 images=images,
                 return_tensors="pt",
                 padding=True,
+                truncation=True,
+                max_length=self._text_max_length,
             )
             inputs = {k: v.to(self._device) for k, v in inputs.items()}
             outputs = self._model(**inputs)
 
             if self._model_type == "siglip":
-                # Some SigLIP checkpoints include a learned global logit_bias.
+                # Convert independent SigLIP scores to per-frame relative confidence
+                # so downstream UI/report percentages remain interpretable.
                 logits = outputs.logits_per_image  # (B, L)
-                model_bias = getattr(self._model, "logit_bias", None)
-                if model_bias is not None:
-                    logits = logits + model_bias
-                probs = torch.sigmoid(logits).cpu().numpy()
+                probs = torch.sigmoid(logits)
+                denom = probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+                probs = (probs / denom).cpu().numpy()
             else:
                 logits = outputs.logits_per_image  # (B, L)
                 probs = logits.softmax(dim=-1).cpu().numpy()

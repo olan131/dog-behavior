@@ -1,7 +1,7 @@
 {
   "total_frames": 82,
-  "anomaly_frames": 7,
-  "anomaly_ratio": 0.0854,
+  "anomaly_frames": 11,
+  "anomaly_ratio": 0.1341,
   "duration_seconds": 81.081,
   "worst_anomaly_timestamp": 1.0010000000000001,
   "method": "zscore",
@@ -10,7 +10,7 @@
   "sequence_aggregate": "none",
   "sequence_window": 5,
   "ece": null,
-  "prompt_source": "llm",
+  "prompt_source": "template",
   "prompt_fallback_used": false,
   "prompt_fallback_reason": null
 }
