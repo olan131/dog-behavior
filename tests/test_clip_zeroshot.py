@@ -42,6 +42,13 @@ class _FakeTensor:
     def to(self, device):
         return self
 
+    def __add__(self, other):
+        if isinstance(other, _FakeTensor):
+            return _FakeTensor(self._data + other._data)
+        return _FakeTensor(self._data + np.asarray(other))
+
+    __radd__ = __add__
+
 
 # ---------------------------------------------------------------------------
 # Fake torch module
@@ -189,6 +196,29 @@ class TestSigLIPClassifier(unittest.TestCase):
         labels = ["x", "y"]
         df = clf.classify_frames(frames, labels)
         self.assertEqual(len(df), 7)
+
+    def test_siglip_applies_model_logit_bias(self):
+        """SigLIP path should add model.logit_bias before sigmoid."""
+        clf = self.module.SigLIPClassifier(model_name="fake-model", device="cpu")
+
+        class _BiasModel:
+            def __init__(self):
+                self.logit_bias = _FakeTensor(np.array([[2.0, -2.0]], dtype=np.float32))
+
+            def __call__(self, **kwargs):
+                return outputs
+
+        clf._model = _BiasModel()
+        clf._model_type = "siglip"
+
+        outputs = types.SimpleNamespace(
+            logits_per_image=_FakeTensor(np.array([[0.0, 0.0]], dtype=np.float32))
+        )
+        clf._processor = MagicMock(return_value={"dummy": _FakeTensor(np.array([1.0]))})
+        probs = clf._score_batch([Image.new("RGB", (224, 224))], ["a", "b"])
+
+        self.assertGreater(probs[0, 0], 0.5)
+        self.assertLess(probs[0, 1], 0.5)
 
 
 if __name__ == "__main__":

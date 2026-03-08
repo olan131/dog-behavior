@@ -2,8 +2,9 @@
 
 The module wraps the HuggingFace ``transformers`` SigLIP pipeline so that a
 list of PIL images can be scored against an arbitrary set of text labels in a
-single call.  Similarity scores are converted to per-label probabilities via
-softmax, and the results are returned as a ``pandas.DataFrame``.
+single call. Similarity scores are converted to per-label probabilities
+(sigmoid for SigLIP, softmax for CLIP), and the results are returned as a
+``pandas.DataFrame``.
 
 Responsibilities
 ----------------
@@ -167,8 +168,11 @@ class SigLIPClassifier:
             outputs = self._model(**inputs)
 
             if self._model_type == "siglip":
-                # SigLIP uses sigmoid; convert logits → probabilities per image
+                # Some SigLIP checkpoints include a learned global logit_bias.
                 logits = outputs.logits_per_image  # (B, L)
+                model_bias = getattr(self._model, "logit_bias", None)
+                if model_bias is not None:
+                    logits = logits + model_bias
                 probs = torch.sigmoid(logits).cpu().numpy()
             else:
                 logits = outputs.logits_per_image  # (B, L)

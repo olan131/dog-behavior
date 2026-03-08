@@ -83,14 +83,14 @@ class TestGenerateReport(unittest.TestCase):
         self.assertIn("高風險", report)
 
     def test_llm_fallback_without_api_key(self):
-        """When OPENAI_API_KEY is absent, mode=llm should fall back to template."""
+        """When OPENROUTER_API_KEY is absent, mode=llm should fall back to template."""
         import os
         from unittest.mock import patch
 
         df = _make_detected()
         with patch.dict(os.environ, {}, clear=True):
-            # Ensure the key is not set
-            os.environ.pop("OPENAI_API_KEY", None)
+            # Ensure OpenRouter key is absent.
+            os.environ.pop("OPENROUTER_API_KEY", None)
             report = self.generate(df, self.labels, mode="llm")
         self.assertIn("寵物行為分析報告", report)
 

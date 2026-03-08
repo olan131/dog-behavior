@@ -12,6 +12,14 @@ __all__ = [
     "plot_anomaly_heatmap",
     "plot_confidence_distribution",
     "generate_report",
+    "build_label_prompt_map",
+    "flatten_prompt_map",
+    "aggregate_prompt_scores",
+    "estimate_night_probability",
+    "add_context_suffix",
+    "mix_day_night_scores",
+    "aggregate_sequence_scores",
+    "compute_ece_from_labeled_scores",
 ]
 
 
@@ -29,6 +37,14 @@ def __getattr__(name: str):  # noqa: N807
             "plot_confidence_distribution",
         ),
         "generate_report": ("pet_behavior_clip.report_llm", "generate_report"),
+        "build_label_prompt_map": ("pet_behavior_clip.prompt_llm", "build_label_prompt_map"),
+        "flatten_prompt_map": ("pet_behavior_clip.prompt_llm", "flatten_prompt_map"),
+        "aggregate_prompt_scores": ("pet_behavior_clip.prompt_llm", "aggregate_prompt_scores"),
+        "estimate_night_probability": ("pet_behavior_clip.contextual", "estimate_night_probability"),
+        "add_context_suffix": ("pet_behavior_clip.contextual", "add_context_suffix"),
+        "mix_day_night_scores": ("pet_behavior_clip.contextual", "mix_day_night_scores"),
+        "aggregate_sequence_scores": ("pet_behavior_clip.contextual", "aggregate_sequence_scores"),
+        "compute_ece_from_labeled_scores": ("pet_behavior_clip.contextual", "compute_ece_from_labeled_scores"),
     }
     if name in _lazy:
         import importlib

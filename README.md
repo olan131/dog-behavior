@@ -52,7 +52,7 @@
 | `pet_behavior_clip/smoothing.py` | 對分數時序資料套用滑動平均、Gaussian 卷積或指數加權平均，降低單幀雜訊 |
 | `pet_behavior_clip/anomaly.py` | Z-score 或 IQR 方法標記偏離基準的異常幀，附帶摘要統計 |
 | `pet_behavior_clip/plots.py` | 繪製行為時間線、熱力圖、信心度分佈圖，並可儲存為 PNG |
-| `pet_behavior_clip/report_llm.py` | 依統計摘要產生繁體中文分析報告；支援模板模式與 OpenAI GPT 模式 |
+| `pet_behavior_clip/report_llm.py` | 依統計摘要產生繁體中文分析報告；支援模板模式與 OpenRouter LLM 模式 |
 | `pet_behavior_clip/cli.py` | Click-based CLI，一行指令完成完整分析流程 |
 | `ui/app.py` | Gradio 互動式網頁 UI |
 
@@ -83,8 +83,36 @@ pet-behavior-clip analyze my_dog.mp4 \
     --threshold 2.5 \
     --output-dir ./results
 
-# 使用 LLM 生成報告（需設定 OPENAI_API_KEY）
-OPENAI_API_KEY=sk-... pet-behavior-clip analyze my_dog.mp4 --report-mode llm
+# 使用 LLM 生成報告（需設定 OPENROUTER_API_KEY）
+OPENROUTER_API_KEY=sk-or-... pet-behavior-clip analyze my_dog.mp4 --report-mode llm
+
+# 或直接用指令帶 key（不依賴環境變數）
+pet-behavior-clip analyze my_dog.mp4 --report-mode llm --openrouter-api-key "sk-or-..."
+
+# 啟用 LLM-augmented prompt 生成（將類別擴充為多個語義提示）
+OPENROUTER_API_KEY=sk-or-... pet-behavior-clip analyze my_dog.mp4 \
+    --labels "Active,Resting,Eating/Drinking" \
+    --prompt-mode llm \
+    --prompt-aggregate max
+
+# 直接帶 key 的 prompt 生成
+pet-behavior-clip analyze my_dog.mp4 \
+    --labels "Active,Resting,Eating/Drinking" \
+    --prompt-mode llm \
+    --prompt-aggregate max \
+    --openrouter-api-key "sk-or-..."
+
+# 僅使用本地模板 prompt 擴充（不呼叫 API）
+pet-behavior-clip analyze my_dog.mp4 \
+    --labels "Active,Resting,Eating/Drinking" \
+    --prompt-mode template
+
+# 啟用 day/night 情境混合 + 序列聚合
+pet-behavior-clip analyze my_dog.mp4 \
+    --labels "Active,Resting,Eating/Drinking" \
+    --context-mode daynight \
+    --sequence-aggregate logit \
+    --sequence-window 7
 ```
 
 ### Gradio 網頁 UI
@@ -92,6 +120,15 @@ OPENAI_API_KEY=sk-... pet-behavior-clip analyze my_dog.mp4 --report-mode llm
 ```bash
 python ui/app.py
 # 開啟 http://localhost:7860
+
+UI 中可透過「Prompt 生成模式」選擇：
+- `off`：直接使用原始 labels
+- `template`：使用本地模板擴充 prompts
+- `llm`：使用 OpenRouter 生成 prompts（需 `OPENROUTER_API_KEY`）
+
+另可設定：
+- `情境模式（day/night）`：以畫面亮度估計夜間機率，混合 daytime/nighttime prompts 分數
+- `序列聚合模式`：`none` / `prob` / `logit`，可降低單幀抖動
 ```
 
 ### Python API
@@ -158,7 +195,7 @@ pytest tests/ -v
 - **SigLIP / CLIP**: 零樣本視覺-語言對齊模型，無需行為標注資料即可分類
 - **pandas / numpy**: 時序資料處理與統計分析
 - **matplotlib**: 科學視覺化
-- **OpenAI GPT-4o-mini** (選用): 自然語言報告生成
+- **OpenRouter + LLM Provider** (選用): 自然語言報告生成
 - **Gradio**: 快速建立互動式 ML 展示 UI
 - **Click**: 強型別 CLI
 

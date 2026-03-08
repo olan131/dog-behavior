@@ -3,9 +3,10 @@
 Two modes are supported:
 
 LLM mode (``mode="llm"``)
-    Calls the OpenAI Chat Completions API (``gpt-4o-mini`` by default) with a
+    Calls the OpenRouter Chat Completions API (``openai/gpt-4o-mini`` by
+    default) with a
     structured prompt derived from the detection summary and per-label
-    statistics.  Requires ``OPENAI_API_KEY`` to be set in the environment.
+    statistics. Requires ``OPENROUTER_API_KEY`` to be set in the environment.
 
 Template mode (``mode="template"``)
     Produces a deterministic Markdown report from the same data without any
@@ -30,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 ReportMode = Literal["llm", "template"]
 
-_DEFAULT_LLM_MODEL = "gpt-4o-mini"
+_DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_DEFAULT_INTERPRET_THRESHOLD = 0.10
 
 _SYSTEM_PROMPT = (
     "You are a veterinary AI assistant that analyses pet behaviour from video data. "
@@ -48,6 +51,7 @@ def generate_report(
     mode: ReportMode = "template",
     output_path: Optional[str | Path] = None,
     llm_model: str = _DEFAULT_LLM_MODEL,
+    llm_api_key: Optional[str] = None,
 ) -> str:
     """Generate a behaviour analysis report.
 
@@ -61,13 +65,16 @@ def generate_report(
     video_path:
         Optional path to the source video (used in report metadata).
     mode:
-        ``"llm"`` to call OpenAI, ``"template"`` for local generation.
+        ``"llm"`` to call OpenRouter, ``"template"`` for local generation.
         When ``mode="llm"`` but the API key is absent, the function
         automatically falls back to ``"template"``.
     output_path:
         If provided, the Markdown report is saved to this path.
     llm_model:
-        OpenAI model identifier (only used when ``mode="llm"``).
+        OpenRouter model identifier (only used when ``mode="llm"``).
+    llm_api_key:
+        Optional OpenRouter API key passed directly by caller.
+        When omitted, ``OPENROUTER_API_KEY`` from environment is used.
 
     Returns
     -------
@@ -78,10 +85,10 @@ def generate_report(
     summary = _build_summary_dict(detected, stats, video_path)
 
     if mode == "llm":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = llm_api_key or _resolve_llm_api_key()
         if not api_key:
             logger.warning(
-                "OPENAI_API_KEY not set; falling back to template report."
+                "OPENROUTER_API_KEY not set; falling back to template report."
             )
             mode = "template"
         else:
@@ -92,7 +99,7 @@ def generate_report(
                 mode = "template"
 
     if mode == "template":
-        report = _template_report(summary, stats, behavior_labels)
+        report = _template_report(summary, stats, behavior_labels, detected)
 
     if output_path:
         _save_text(report, output_path)
@@ -150,7 +157,14 @@ def _build_summary_dict(
 # ---------------------------------------------------------------------------
 
 
-def _template_report(summary: dict, stats: dict, labels: List[str]) -> str:
+def _template_report(
+    summary: dict,
+    stats: dict,
+    labels: List[str],
+    detected: pd.DataFrame,
+) -> str:
+    interpretation = _interpret_behaviors(detected, labels)
+
     lines = [
         "# 寵物行為分析報告",
         "",
@@ -171,6 +185,24 @@ def _template_report(summary: dict, stats: dict, labels: List[str]) -> str:
             f"標準差 {s['std']:.2%}，"
             f"最高 {s['max']:.2%}，最低 {s['min']:.2%}"
         )
+
+    lines += [
+        "",
+        "### 可讀判讀",
+        "",
+        f"- 判讀門檻（主行為信心度）：**{interpretation['threshold']:.0%}**",
+        f"- 高於門檻幀數：**{interpretation['confident_frames']}** / {interpretation['total_frames']} "
+        f"（{interpretation['confident_ratio']:.1%}）",
+        f"- 不確定幀數：**{interpretation['uncertain_frames']}** / {interpretation['total_frames']} "
+        f"（{interpretation['uncertain_ratio']:.1%}）",
+    ]
+
+    if interpretation["dominant_behaviors"]:
+        lines.append("- 主行為占比（僅計入高於門檻幀）：")
+        for item in interpretation["dominant_behaviors"]:
+            lines.append(f"  - **{item['label']}**：{item['ratio']:.1%}")
+    else:
+        lines.append("- 主行為占比：目前全為低信心，暫無可靠判讀。")
 
     lines += [
         "",
@@ -240,7 +272,7 @@ def _llm_report(
 ) -> str:  # pragma: no cover – requires live API
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=_OPENROUTER_BASE_URL)
     user_content = (
         "以下是寵物行為影片的分析數據，請根據此數據撰寫完整的繁體中文分析報告：\n\n"
         f"**摘要統計：**\n```json\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n```\n\n"
@@ -255,8 +287,59 @@ def _llm_report(
         temperature=0.4,
     )
     if not response.choices or response.choices[0].message.content is None:
-        raise ValueError("OpenAI API returned an empty response.")
+        raise ValueError("OpenRouter API returned an empty response.")
     return response.choices[0].message.content.strip()
+
+
+def _resolve_llm_api_key() -> Optional[str]:
+    """Resolve API key for OpenRouter only."""
+    return os.getenv("OPENROUTER_API_KEY")
+
+
+def _interpret_behaviors(
+    detected: pd.DataFrame,
+    labels: List[str],
+    threshold: float = _DEFAULT_INTERPRET_THRESHOLD,
+) -> dict:
+    """Build a confidence-thresholded behavior interpretation summary."""
+    available_labels = [l for l in labels if l in detected.columns]
+    total_frames = len(detected)
+    if total_frames == 0 or not available_labels:
+        return {
+            "threshold": threshold,
+            "total_frames": total_frames,
+            "confident_frames": 0,
+            "uncertain_frames": total_frames,
+            "confident_ratio": 0.0,
+            "uncertain_ratio": 1.0 if total_frames > 0 else 0.0,
+            "dominant_behaviors": [],
+        }
+
+    scores = detected[available_labels]
+    top_label = scores.idxmax(axis=1)
+    top_conf = scores.max(axis=1)
+    confident_mask = top_conf >= threshold
+
+    confident_frames = int(confident_mask.sum())
+    uncertain_frames = int(total_frames - confident_frames)
+
+    dominant_behaviors = []
+    if confident_frames > 0:
+        ratios = top_label[confident_mask].value_counts(normalize=True)
+        dominant_behaviors = [
+            {"label": label, "ratio": float(ratio)}
+            for label, ratio in ratios.items()
+        ]
+
+    return {
+        "threshold": threshold,
+        "total_frames": total_frames,
+        "confident_frames": confident_frames,
+        "uncertain_frames": uncertain_frames,
+        "confident_ratio": confident_frames / total_frames,
+        "uncertain_ratio": uncertain_frames / total_frames,
+        "dominant_behaviors": dominant_behaviors,
+    }
 
 
 # ---------------------------------------------------------------------------

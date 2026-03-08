@@ -1,0 +1,13 @@
+{
+  "total_frames": 27,
+  "anomaly_frames": 1,
+  "anomaly_ratio": 0.037,
+  "duration_seconds": 25.330210772833723,
+  "worst_anomaly_timestamp": 0.0,
+  "method": "zscore",
+  "threshold": 2.5,
+  "context_mode": "off",
+  "sequence_aggregate": "none",
+  "sequence_window": 5,
+  "ece": null
+}
