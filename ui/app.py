@@ -54,8 +54,8 @@ from pet_behavior_clip.report_llm import generate_report
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LABELS = (
-    "dog sitting calmly, dog walking normally, dog running, "
-    "dog barking, dog scratching, dog shaking, dog lying down"
+    "a picture of an animal moving, a picture of an animal eating, "
+    "a picture of an animal resting"
 )
 
 _OUT_DIR = Path("ui_output")

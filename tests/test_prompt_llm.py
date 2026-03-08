@@ -31,6 +31,28 @@ class TestPromptLLM(unittest.TestCase):
             self.assertIn(label, prompt_map)
             self.assertGreaterEqual(len(prompt_map[label]), 5)
 
+    def test_template_prompts_are_siglip_friendly(self):
+        labels = ["Active"]
+        prompt_map = build_label_prompt_map(labels, mode="template")
+        prompts = prompt_map["Active"]
+        self.assertTrue(prompts)
+        for p in prompts:
+            self.assertLessEqual(len(p.split()), 8)
+            self.assertIn("dog", p)
+
+    def test_template_prompts_for_default_labels_are_specific(self):
+        labels = [
+            "dog sitting calmly",
+            "dog walking normally",
+            "dog running",
+            "dog lying down",
+        ]
+        prompt_map = build_label_prompt_map(labels, mode="template")
+        self.assertTrue(any("seated" in p or "sitting" in p for p in prompt_map["dog sitting calmly"]))
+        self.assertTrue(any("walking" in p or "gait" in p for p in prompt_map["dog walking normally"]))
+        self.assertTrue(any("running" in p or "fast" in p for p in prompt_map["dog running"]))
+        self.assertTrue(any("lying" in p or "recumbent" in p for p in prompt_map["dog lying down"]))
+
     def test_llm_mode_without_key_exposes_fallback_result(self):
         labels = ["Active", "Resting"]
         with patch.dict("os.environ", {}, clear=True):

@@ -76,7 +76,7 @@ pet-behavior-clip analyze my_dog.mp4
 
 # 自訂標籤、輸出目錄與參數
 pet-behavior-clip analyze my_dog.mp4 \
-    --labels "dog sitting,dog running,dog barking,dog limping" \
+    --labels "a picture of an animal moving,a picture of an animal eating,a picture of an animal resting" \
     --fps 2 \
     --smooth-window 7 \
     --anomaly-method zscore \
@@ -141,7 +141,11 @@ from pet_behavior_clip.anomaly import AnomalyDetector
 from pet_behavior_clip.plots import plot_behavior_timeline
 from pet_behavior_clip.report_llm import generate_report
 
-labels = ["dog sitting calmly", "dog barking", "dog limping"]
+labels = [
+    "a picture of an animal moving",
+    "a picture of an animal eating",
+    "a picture of an animal resting",
+]
 
 # 1. 取樣影片幀
 reader = VideoReader("my_dog.mp4", sample_fps=1.0)

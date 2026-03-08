@@ -1,7 +1,7 @@
 {
   "total_frames": 27,
-  "anomaly_frames": 2,
-  "anomaly_ratio": 0.0741,
+  "anomaly_frames": 1,
+  "anomaly_ratio": 0.037,
   "duration_seconds": 25.330210772833723,
   "worst_anomaly_timestamp": 4.871194379391101,
   "method": "zscore",

@@ -141,7 +141,7 @@ class SigLIPClassifier:
         frames:
             Sequence of PIL Images (one per video sample).
         labels:
-            Behaviour descriptions, e.g. ``["dog sitting", "dog barking"]``.
+            Behaviour descriptions, e.g. ``["dog sitting", "dog running"]``.
         timestamps:
             Optional per-frame timestamp in seconds.
 

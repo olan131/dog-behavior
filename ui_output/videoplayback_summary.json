@@ -3,14 +3,14 @@
   "anomaly_frames": 11,
   "anomaly_ratio": 0.1341,
   "duration_seconds": 81.081,
-  "worst_anomaly_timestamp": 1.0010000000000001,
+  "worst_anomaly_timestamp": 0.0,
   "method": "zscore",
   "threshold": 2.5,
   "context_mode": "off",
   "sequence_aggregate": "none",
   "sequence_window": 5,
   "ece": null,
-  "prompt_source": "template",
+  "prompt_source": "llm",
   "prompt_fallback_used": false,
   "prompt_fallback_reason": null
 }

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Literal, Sequence
 
 import pandas as pd
@@ -29,13 +30,15 @@ PromptAggregate = Literal["max", "mean"]
 _DEFAULT_PROMPT_MODEL = "openai/gpt-4o-mini"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _DEFAULT_CAMERA_CONTEXT = (
-    "4K overhead fisheye surveillance camera view inside a pet living space"
+    "indoor pet camera"
 )
 _DEFAULT_VARIANTS = 5
+_MAX_PROMPT_WORDS = 8
 
 _SYSTEM_PROMPT = (
-    "You generate robust zero-shot text prompts for vision-language models. "
-    "Return strict JSON only. Keep prompts concise and visual."
+    "You generate SigLIP-friendly zero-shot prompts for dog behavior recognition. "
+    "Use short phrases with only visible actions/postures, avoid intent/emotion/health diagnosis, "
+    "and keep each prompt <= 8 words. Return strict JSON only."
 )
 
 
@@ -194,44 +197,119 @@ def _template_variants_for_label(label: str, camera_context: str) -> List[str]:
     """Generate deterministic prompt variants for one label."""
     key = label.strip().lower()
 
+    exact_prompt_labels = {
+        "a picture of an animal moving",
+        "a picture of an animal eating",
+        "a picture of an animal resting",
+    }
+    if key in exact_prompt_labels:
+        return [key]
+
     active_keys = {"active", "activity", "moving", "play"}
     resting_keys = {"resting", "rest", "sleep", "calm", "idle"}
     eat_keys = {"eating/drinking", "eating", "drinking", "feeding"}
+    moving_keys = {"dog moving", "moving", "dog in motion"}
+    stationary_keys = {"dog stationary", "stationary", "dog not moving"}
+    sitting_keys = {"dog sitting calmly", "dog sitting", "sitting"}
+    walking_keys = {"dog walking normally", "dog walking", "walking"}
+    running_keys = {"dog running", "running"}
+    lying_keys = {"dog lying down", "dog lying", "lying down"}
 
-    if key in active_keys:
+    if key in moving_keys:
         actions = [
-            "dog is moving actively",
-            "dog is walking or trotting",
-            "dog is running or changing position quickly",
-            "dog is alert and exploring the area",
-            "dog shows sustained locomotion",
+            "dog body translating",
+            "dog stepping forward",
+            "dog changing location",
+            "dog moving across floor",
+            "dog in continuous motion",
+        ]
+    elif key in stationary_keys:
+        actions = [
+            "dog staying in place",
+            "dog no body translation",
+            "dog static posture",
+            "dog fixed location",
+            "dog nearly motionless",
+        ]
+    elif key in sitting_keys:
+        actions = [
+            "dog sitting posture",
+            "dog hindquarters on floor",
+            "dog upright seated",
+            "dog seated still",
+            "dog sitting in place",
+        ]
+    elif key in walking_keys:
+        actions = [
+            "dog walking",
+            "dog slow locomotion",
+            "dog stepping steadily",
+            "dog moving at walking pace",
+            "dog forward gait",
+        ]
+    elif key in running_keys:
+        actions = [
+            "dog running",
+            "dog fast locomotion",
+            "dog rapid stride",
+            "dog moving quickly",
+            "dog sprinting movement",
+        ]
+    elif key in lying_keys:
+        actions = [
+            "dog lying down",
+            "dog body on floor",
+            "dog low resting posture",
+            "dog recumbent posture",
+            "dog lying still",
+        ]
+    elif key in active_keys:
+        actions = [
+            "dog running",
+            "dog walking",
+            "dog trotting",
+            "dog changing position",
+            "dog moving quickly",
         ]
     elif key in resting_keys:
         actions = [
-            "dog is resting",
-            "dog is lying down calmly",
-            "dog is sleeping or nearly motionless",
-            "dog remains in one place with low activity",
-            "dog posture indicates relaxation",
+            "dog lying down",
+            "dog resting",
+            "dog sleeping",
+            "dog still posture",
+            "dog low movement",
         ]
     elif key in eat_keys:
         actions = [
-            "dog is eating from a bowl",
-            "dog is drinking water",
-            "dog head is lowered at food or water station",
-            "dog repeatedly licks or chews near the bowl",
-            "dog is engaged in feeding behavior",
+            "dog eating from bowl",
+            "dog drinking water",
+            "dog head near bowl",
+            "dog licking near bowl",
+            "dog chewing at bowl",
         ]
     else:
         actions = [
-            f"dog behavior category: {label}",
-            f"surveillance view of dog: {label}",
-            f"top-down pet camera scene with dog {label}",
-            f"dog appears to be {label}",
-            f"canine posture consistent with {label}",
+            f"dog {label}",
+            f"dog posture {label}",
+            f"dog action {label}",
+            f"dog visible {label}",
+            f"dog behavior {label}",
         ]
 
-    return [f"{a}, {camera_context}" for a in actions]
+    return [_siglip_safe_prompt(a, camera_context) for a in actions]
+
+
+def _siglip_safe_prompt(action_text: str, camera_context: str) -> str:
+    """Normalize to a short, observable phrase suitable for SigLIP text encoder."""
+    cleaned_action = re.sub(r"\s+", " ", action_text.strip().lower())
+    cleaned_context = re.sub(r"\s+", " ", camera_context.strip().lower())
+    merged = f"{cleaned_action} in {cleaned_context}" if cleaned_context else cleaned_action
+    merged = re.sub(r"[^a-z0-9\s/-]", "", merged)
+
+    words = [w for w in merged.split(" ") if w]
+    if len(words) > _MAX_PROMPT_WORDS:
+        words = words[:_MAX_PROMPT_WORDS]
+    return " ".join(words)
 
 
 def _llm_prompt_map(
@@ -246,10 +324,11 @@ def _llm_prompt_map(
     client = OpenAI(api_key=api_key, base_url=_OPENROUTER_BASE_URL)
 
     user_prompt = (
-        "Generate zero-shot prompt variants for dog behavior recognition.\n"
+        "Generate SigLIP-friendly zero-shot prompt variants for dog behavior recognition.\n"
         f"Labels: {list(labels)}\n"
         f"Camera context: {camera_context}\n"
         f"Variants per label: {n_variants}\n"
+        "Constraints: each prompt <= 8 words; only visible actions/postures; no intent, emotion, or diagnosis; no punctuation-heavy sentences.\n"
         "Return JSON only in this exact schema:\n"
         '{"labels": [{"name": "<label>", "prompts": ["...", "..."]}]}'
     )
@@ -268,7 +347,11 @@ def _llm_prompt_map(
     mapping: Dict[str, List[str]] = {}
     for item in payload.get("labels", []):
         name = str(item.get("name", "")).strip()
-        prompts = [str(p).strip() for p in item.get("prompts", []) if str(p).strip()]
+        prompts = [
+            _siglip_safe_prompt(str(p), "")
+            for p in item.get("prompts", [])
+            if str(p).strip()
+        ]
         if name:
             mapping[name] = prompts
 

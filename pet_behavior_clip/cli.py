@@ -9,7 +9,7 @@ Analyse a video with default labels::
 Custom labels and output directory::
 
     python -m pet_behavior_clip.cli analyze my_dog.mp4 \\
-        --labels "dog sitting,dog running,dog barking,dog eating" \\
+        --labels "a picture of an animal moving,a picture of an animal eating,a picture of an animal resting" \
         --output-dir ./results \\
         --fps 2 \\
         --smooth-window 7 \\
@@ -37,14 +37,9 @@ logging.basicConfig(
 )
 
 _DEFAULT_LABELS = [
-    "dog sitting calmly",
-    "dog walking normally",
-    "dog running",
-    "dog barking",
-    "dog scratching",
-    "dog shaking",
-    "dog limping",
-    "dog lying down",
+    "a picture of an animal moving",
+    "a picture of an animal eating",
+    "a picture of an animal resting",
 ]
 
 
