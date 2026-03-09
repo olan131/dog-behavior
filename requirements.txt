@@ -15,5 +15,3 @@ click>=8.1.0
 # Web UI
 gradio>=4.0.0
 
-# Optional: LLM report generation (requires OPENROUTER_API_KEY)
-openai>=1.0.0

@@ -1,44 +1,21 @@
-# 寵物行為分析報告
+# Pet Behavior Analysis Report
 
-**影片來源：** C:\Users\khzzi\AppData\Local\Temp\gradio\6f1f62d0c29e1e23a95766e157900cc0c8cf522126f587b76bbe38b6c173658c\dog2.mp4  
-**分析時間：** 2026-03-08T07:43:37+00:00  
-**影片長度：** 75.3 秒  
-**分析幀數：** 76  
+- Video: `C:\Users\khzzi\AppData\Local\Temp\gradio\6f1f62d0c29e1e23a95766e157900cc0c8cf522126f587b76bbe38b6c173658c\dog2.mp4`
+- Generated at (UTC): `2026-03-09T10:51:45+00:00`
+- Frames analyzed: `76`
+- Duration (s): `75.31`
+- Anomaly frames: `2` (2.63%)
 
----
+## Per-label statistics
 
-## 一、整體行為摘要
+- `moving`: mean=0.0972, std=0.0081, min=0.0834, max=0.1133
+- `eating`: mean=0.1378, std=0.0109, min=0.1215, max=0.1676
+- `resting`: mean=0.1039, std=0.0095, min=0.0805, max=0.1408
 
-- **a picture of an animal moving**：平均信心度 19.78%，標準差 10.15%，最高 45.80%，最低 6.92%
-- **a picture of an animal eating**：平均信心度 47.39%，標準差 10.78%，最高 62.58%，最低 8.27%
-- **a picture of an animal resting**：平均信心度 32.83%，標準差 9.48%，最高 65.42%，最低 14.98%
+## Peak anomaly
 
-### 可讀判讀
+- Timestamp: `0.00` seconds
 
-- 判讀門檻（主行為信心度）：**10%**
-- 高於門檻幀數：**76** / 76 （100.0%）
-- 不確定幀數：**0** / 76 （0.0%）
-- 主行為占比（僅計入高於門檻幀）：
-  - **a picture of an animal eating**：81.6%
-  - **a picture of an animal resting**：9.2%
-  - **a picture of an animal moving**：9.2%
+## Notes
 
----
-
-## 二、異常偵測結果
-
-- 異常幀數：**4** / 76 （5.3%）
-- 最嚴重異常時間點：**1.00 秒**
-- 風險等級：**中風險 🟡**
-
----
-
-## 三、建議事項
-
-偵測到輕度異常行為。建議記錄發生時間並觀察是否持續，如情況未改善請諮詢獸醫。
-
----
-
-## 四、注意事項
-
-> 本報告由自動化模型生成，僅供參考，不構成醫療診斷。如有疑慮，請尋求專業獸醫意見。
+- This report is generated locally without cloud services.

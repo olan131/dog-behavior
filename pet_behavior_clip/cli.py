@@ -1,31 +1,13 @@
-"""cli.py – Command-line interface for pet-behavior-clip.
+"""cli.py - Command-line interface for pet-behavior-clip.
 
-Usage examples
---------------
-Analyse a video with default labels::
-
-    python -m pet_behavior_clip.cli analyze my_dog.mp4
-
-Custom labels and output directory::
-
-    python -m pet_behavior_clip.cli analyze my_dog.mp4 \\
-        --labels "a picture of an animal moving,a picture of an animal eating,a picture of an animal resting" \
-        --output-dir ./results \\
-        --fps 2 \\
-        --smooth-window 7 \\
-        --anomaly-method zscore \\
-        --threshold 2.5
-
-Generate an LLM report (requires OPENROUTER_API_KEY)::
-
-    python -m pet_behavior_clip.cli analyze my_dog.mp4 --report-mode llm
+The CLI runs a fully local pipeline:
+video -> SigLIP scoring -> temporal smoothing -> anomaly detection -> outputs.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import List
 
@@ -37,9 +19,9 @@ logging.basicConfig(
 )
 
 _DEFAULT_LABELS = [
-    "a picture of an animal moving",
-    "a picture of an animal eating",
-    "a picture of an animal resting",
+    "moving",
+    "eating",
+    "resting",
 ]
 
 
@@ -93,13 +75,6 @@ def cli() -> None:
     help="Anomaly detection threshold.",
 )
 @click.option(
-    "--report-mode",
-    default="template",
-    show_default=True,
-    type=click.Choice(["template", "llm"]),
-    help="Report generation mode.",
-)
-@click.option(
     "--output-dir",
     default="ui_output",
     show_default=True,
@@ -111,39 +86,6 @@ def cli() -> None:
     default="google/siglip-so400m-patch14-224",
     show_default=True,
     help="HuggingFace model identifier.",
-)
-@click.option(
-    "--prompt-mode",
-    default="template",
-    show_default=True,
-    type=click.Choice(["off", "template", "llm"]),
-    help="Prompt generation mode for zero-shot classification.",
-)
-@click.option(
-    "--prompt-llm-model",
-    default="openai/gpt-4o-mini",
-    show_default=True,
-    help="OpenRouter model used when --prompt-mode=llm.",
-)
-@click.option(
-    "--openrouter-api-key",
-    default="",
-    show_default=False,
-    help="OpenRouter API key passed directly (overrides environment variable).",
-)
-@click.option(
-    "--prompt-aggregate",
-    default="max",
-    show_default=True,
-    type=click.Choice(["max", "mean"]),
-    help="How to aggregate multiple prompt scores into one class score.",
-)
-@click.option(
-    "--context-mode",
-    default="off",
-    show_default=True,
-    type=click.Choice(["off", "daynight"]),
-    help="Context-aware scoring mode. 'daynight' mixes daytime/nighttime prompt scores.",
 )
 @click.option(
     "--sequence-aggregate",
@@ -167,14 +109,8 @@ def analyze(
     smooth_method: str,
     anomaly_method: str,
     threshold: float,
-    report_mode: str,
     output_dir: str,
     model: str,
-    prompt_mode: str,
-    prompt_llm_model: str,
-    openrouter_api_key: str,
-    prompt_aggregate: str,
-    context_mode: str,
     sequence_aggregate: str,
     sequence_window: int,
 ) -> None:
@@ -191,7 +127,7 @@ def analyze(
     # ------------------------------------------------------------------
     # 1. Frame sampling
     # ------------------------------------------------------------------
-    click.echo("\n[1/5] Sampling frames …")
+    click.echo("\n[1/5] Sampling frames ...")
     from pet_behavior_clip.video import VideoReader
 
     reader = VideoReader(video_path, sample_fps=fps)
@@ -204,65 +140,21 @@ def analyze(
     # ------------------------------------------------------------------
     # 2. Zero-shot classification
     # ------------------------------------------------------------------
-    click.echo("[2/5] Running SigLIP zero-shot classification …")
+    click.echo("[2/5] Running SigLIP zero-shot classification ...")
     from pet_behavior_clip.clip_zeroshot import SigLIPClassifier
-
-    from pet_behavior_clip.prompt_llm import (
-        aggregate_prompt_scores,
-        build_label_prompt_result,
-        flatten_prompt_map,
-    )
     from pet_behavior_clip.contextual import (
-        add_context_suffix,
         aggregate_sequence_scores,
         compute_ece_from_labeled_scores,
-        estimate_night_probability,
-        mix_day_night_scores,
     )
-
-    prompt_result = build_label_prompt_result(
-        labels=label_list,
-        mode=prompt_mode,
-        llm_model=prompt_llm_model,
-        llm_api_key=openrouter_api_key or None,
-    )
-    prompt_map = prompt_result["prompt_map"]
-    prompt_list = flatten_prompt_map(prompt_map)
-    click.echo(
-        f"       → Prompt mode: {prompt_mode} | {len(prompt_list)} prompts for {len(label_list)} classes"
-    )
-    if bool(prompt_result.get("fallback_used", False)):
-        reason = str(prompt_result.get("fallback_reason") or "unknown")
-        click.echo(
-            "       → WARNING: LLM prompt generation failed, fallback to template "
-            f"(reason: {reason})"
-        )
+    from pet_behavior_clip.prompt import classify_with_template_max
 
     classifier = SigLIPClassifier(model_name=model)
-
-    if context_mode == "daynight":
-        day_map = add_context_suffix(prompt_map, "captured during daytime")
-        night_map = add_context_suffix(prompt_map, "captured during nighttime")
-
-        day_prompts = flatten_prompt_map(day_map)
-        night_prompts = flatten_prompt_map(night_map)
-
-        day_prompt_scores = classifier.classify_frames(frames, day_prompts, timestamps)
-        night_prompt_scores = classifier.classify_frames(frames, night_prompts, timestamps)
-
-        day_scores = aggregate_prompt_scores(day_prompt_scores, day_map, reducer=prompt_aggregate)
-        night_scores = aggregate_prompt_scores(night_prompt_scores, night_map, reducer=prompt_aggregate)
-
-        p_night = estimate_night_probability(frames)
-        scores_df = mix_day_night_scores(day_scores, night_scores, p_night)
-        click.echo("       → Context mode: daynight (brightness-weighted mixing)")
-    else:
-        prompt_scores_df = classifier.classify_frames(frames, prompt_list, timestamps)
-        scores_df = aggregate_prompt_scores(
-            prompt_scores_df,
-            prompt_map,
-            reducer=prompt_aggregate,
-        )
+    scores_df = classify_with_template_max(
+        classifier=classifier,
+        frames=frames,
+        labels=label_list,
+        timestamps=timestamps,
+    )
 
     scores_df = aggregate_sequence_scores(
         scores_df,
@@ -270,14 +162,14 @@ def analyze(
         window=sequence_window,
     )
     click.echo(
-        f"       → Sequence aggregation: {sequence_aggregate} (window={sequence_window})"
+        f"       -> Sequence aggregation: {sequence_aggregate} (window={sequence_window})"
     )
     click.echo(f"       → Scores shape: {scores_df.shape}")
 
     # ------------------------------------------------------------------
     # 3. Temporal smoothing
     # ------------------------------------------------------------------
-    click.echo("[3/5] Applying temporal smoothing …")
+    click.echo("[3/5] Applying temporal smoothing ...")
     from pet_behavior_clip.smoothing import smooth_scores
 
     smoothed_df = smooth_scores(scores_df, window=smooth_window, method=smooth_method)
@@ -285,13 +177,12 @@ def analyze(
     # ------------------------------------------------------------------
     # 4. Anomaly detection
     # ------------------------------------------------------------------
-    click.echo("[4/5] Detecting anomalies …")
+    click.echo("[4/5] Detecting anomalies ...")
     from pet_behavior_clip.anomaly import AnomalyDetector
 
     detector = AnomalyDetector(method=anomaly_method, threshold=threshold)
     detected_df = detector.detect(smoothed_df)
     summary = detector.summary(detected_df)
-    summary["context_mode"] = context_mode
     summary["sequence_aggregate"] = sequence_aggregate
     summary["sequence_window"] = sequence_window
     summary["ece"] = compute_ece_from_labeled_scores(detected_df)
@@ -303,7 +194,7 @@ def analyze(
     # ------------------------------------------------------------------
     # 5. Outputs
     # ------------------------------------------------------------------
-    click.echo("[5/5] Saving outputs …")
+    click.echo("[5/5] Saving outputs ...")
 
     # CSV
     csv_path = out_dir / f"{stem}_scores.csv"
@@ -327,16 +218,14 @@ def analyze(
     plot_confidence_distribution(detected_df, output_path=out_dir / f"{stem}_distribution.png")
     click.echo(f"       Plots → {out_dir}/")
 
-    # Report
-    from pet_behavior_clip.report_llm import generate_report
+    # Local report
+    from pet_behavior_clip.report import generate_report
 
     report_md = generate_report(
         detected_df,
         label_list,
         video_path=video_path,
-        mode=report_mode,
         output_path=out_dir / f"{stem}_report.md",
-        llm_api_key=openrouter_api_key or None,
     )
     click.echo(f"       Report → {out_dir}/{stem}_report.md")
 

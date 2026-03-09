@@ -77,6 +77,8 @@ class _NoGradCtx:
 def _make_fake_torch():
     mock_torch = types.ModuleType("torch")
     mock_torch.no_grad = _NoGradCtx
+    mock_torch.inference_mode = _NoGradCtx
+    mock_torch.autocast = lambda device_type, enabled=False: _NoGradCtx()
     mock_torch.cuda = MagicMock()
     mock_torch.cuda.is_available = MagicMock(return_value=False)
     mock_torch.sigmoid = lambda t: _FakeTensor(

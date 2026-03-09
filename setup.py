@@ -24,7 +24,6 @@ setup(
         "transformers>=4.38.0",
         "click>=8.1.0",
         "gradio>=4.0.0",
-        "openai>=1.0.0",
     ],
     entry_points={
         "console_scripts": [

@@ -1,78 +1,11 @@
-"""contextual.py - Context-aware score mixing and sequence aggregation helpers."""
+"""contextual.py - Sequence-level post-processing helpers for local inference."""
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Optional
 
 import numpy as np
 import pandas as pd
-from PIL import Image
-
-
-def estimate_night_probability(
-    frames: Sequence[Image.Image],
-    midpoint: float = 0.35,
-    sharpness: float = 12.0,
-) -> np.ndarray:
-    """Estimate per-frame night probability from image brightness.
-
-    Darker frames map to higher night probability.
-    """
-    if not frames:
-        return np.array([], dtype=float)
-
-    means = []
-    for img in frames:
-        gray = img.convert("L")
-        arr = np.asarray(gray, dtype=np.float32) / 255.0
-        means.append(float(arr.mean()))
-
-    brightness = np.asarray(means, dtype=float)
-    logits = sharpness * (brightness - midpoint)
-    return 1.0 / (1.0 + np.exp(logits))
-
-
-def add_context_suffix(
-    prompt_map: Dict[str, Sequence[str]],
-    suffix: str,
-) -> Dict[str, List[str]]:
-    """Append a context suffix to each prompt in the map."""
-    out: Dict[str, List[str]] = {}
-    for label, prompts in prompt_map.items():
-        out[label] = [f"{p}, {suffix}" for p in prompts]
-    return out
-
-
-def mix_day_night_scores(
-    day_scores: pd.DataFrame,
-    night_scores: pd.DataFrame,
-    night_probability: Sequence[float],
-) -> pd.DataFrame:
-    """Mix class probabilities with per-frame night weights.
-
-    output = p_night * night_scores + (1 - p_night) * day_scores
-    """
-    if len(day_scores) != len(night_scores):
-        raise ValueError("day_scores and night_scores must have the same number of rows")
-    if len(day_scores) != len(night_probability):
-        raise ValueError("night_probability length must match score rows")
-
-    if "timestamp" not in day_scores.columns or "timestamp" not in night_scores.columns:
-        raise ValueError("Scores DataFrames must include a 'timestamp' column")
-
-    cols = [c for c in day_scores.columns if c != "timestamp"]
-    out = pd.DataFrame({"timestamp": day_scores["timestamp"].to_numpy()})
-
-    w = np.asarray(night_probability, dtype=float).reshape(-1, 1)
-    day = day_scores[cols].to_numpy(dtype=float)
-    night = night_scores[cols].to_numpy(dtype=float)
-    mixed = w * night + (1.0 - w) * day
-
-    for idx, col in enumerate(cols):
-        out[col] = mixed[:, idx]
-    return out
-
-
 def aggregate_sequence_scores(
     scores: pd.DataFrame,
     mode: str = "none",

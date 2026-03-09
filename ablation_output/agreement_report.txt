@@ -1,0 +1,15 @@
+========================================================
+Manual Annotation Comparison Report
+========================================================
+Total annotated frames   : 28
+
+System A (raw labels)    : 1/28 = 3.6%
+System B (template+max)  : 12/28 = 42.9%
+
+Per human-label breakdown:
+  moving/active       : A=1/1=100%  B=1/1=100%
+  resting             : A=0/17=0%  B=1/17=6%
+  eating/drinking     : A=0/10=0%  B=10/10=100%
+
+Note: spot-check only (random sample), not a full evaluation.
+========================================================

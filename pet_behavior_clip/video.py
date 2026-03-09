@@ -34,6 +34,8 @@ class VideoReader:
         self.path = Path(path)
         if not self.path.exists():
             raise FileNotFoundError(f"Video file not found: {self.path}")
+        if sample_fps <= 0:
+            raise ValueError("sample_fps must be > 0")
         self.sample_fps = sample_fps
         self._cap: cv2.VideoCapture | None = None
 
@@ -71,6 +73,13 @@ class VideoReader:
         """
         return list(self._iter_frames())
 
+    def iter_frames(self) -> Generator[Tuple[float, Image.Image], None, None]:
+        """Iterate sampled ``(timestamp_seconds, PIL_Image)`` tuples.
+
+        This avoids materializing all sampled frames in memory at once.
+        """
+        yield from self._iter_frames()
+
     def _iter_frames(self) -> Generator[Tuple[float, Image.Image], None, None]:
         cap = self._open()
         native = self.native_fps
@@ -86,10 +95,25 @@ class VideoReader:
         frame_idx = 0
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
+        has_grab = hasattr(cap, "grab") and hasattr(cap, "retrieve")
+
         while True:
-            ret, bgr = cap.read()
-            if not ret:
-                break
+            if has_grab:
+                # grab() advances frame position without decoding pixel data.
+                # retrieve() is called only for frames we keep.
+                ret = cap.grab()
+                if not ret:
+                    break
+                bgr = None
+                if frame_idx % step == 0:
+                    ret, bgr = cap.retrieve()
+                    if not ret:
+                        break
+            else:
+                ret, bgr = cap.read()
+                if not ret:
+                    break
+
             if frame_idx % step == 0:
                 timestamp = frame_idx / native
                 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)

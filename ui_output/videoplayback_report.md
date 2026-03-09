@@ -1,44 +1,21 @@
-# 寵物行為分析報告
+# Pet Behavior Analysis Report
 
-**影片來源：** C:\Users\khzzi\AppData\Local\Temp\gradio\22df04e58bfe1177c323fe502354ea6ed55beeb555f98a4468ae2d924cc9da1b\videoplayback.mp4  
-**分析時間：** 2026-03-08T07:35:06+00:00  
-**影片長度：** 81.1 秒  
-**分析幀數：** 82  
+- Video: `C:\Users\khzzi\AppData\Local\Temp\gradio\22df04e58bfe1177c323fe502354ea6ed55beeb555f98a4468ae2d924cc9da1b\videoplayback.mp4`
+- Generated at (UTC): `2026-03-09T09:26:03+00:00`
+- Frames analyzed: `82`
+- Duration (s): `81.08`
+- Anomaly frames: `8` (9.76%)
 
----
+## Per-label statistics
 
-## 一、整體行為摘要
+- `a picture of an animal moving`: mean=0.9217, std=0.1001, min=0.5619, max=0.9804
+- `a picture of an animal eating`: mean=0.0581, std=0.0676, min=0.0109, max=0.3402
+- `a picture of an animal resting`: mean=0.0203, std=0.0353, min=0.0026, max=0.1490
 
-- **dog sitting calmly**：平均信心度 0.31%，標準差 0.39%，最高 1.58%，最低 0.02%
-- **dog walking normally**：平均信心度 21.00%，標準差 12.72%，最高 46.36%，最低 3.15%
-- **dog running**：平均信心度 32.11%，標準差 14.78%，最高 72.50%，最低 11.60%
-- **dog lying down**：平均信心度 0.40%，標準差 0.69%，最高 2.76%，最低 0.01%
+## Peak anomaly
 
-### 可讀判讀
+- Timestamp: `0.00` seconds
 
-- 判讀門檻（主行為信心度）：**10%**
-- 高於門檻幀數：**82** / 82 （100.0%）
-- 不確定幀數：**0** / 82 （0.0%）
-- 主行為占比（僅計入高於門檻幀）：
-  - **dog running**：65.9%
-  - **dog walking normally**：34.1%
+## Notes
 
----
-
-## 二、異常偵測結果
-
-- 異常幀數：**11** / 82 （13.4%）
-- 最嚴重異常時間點：**0.00 秒**
-- 風險等級：**中風險 🟡**
-
----
-
-## 三、建議事項
-
-偵測到輕度異常行為。建議記錄發生時間並觀察是否持續，如情況未改善請諮詢獸醫。
-
----
-
-## 四、注意事項
-
-> 本報告由自動化模型生成，僅供參考，不構成醫療診斷。如有疑慮，請尋求專業獸醫意見。
+- This report is generated locally without cloud services.

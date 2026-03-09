@@ -178,27 +178,29 @@ class SigLIPClassifier:
         """Return softmax probabilities for a batch of images. Shape: (B, L)."""
         import torch
 
-        with torch.no_grad():
-            inputs = self._processor(
-                text=labels,
-                images=images,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=self._text_max_length,
-            )
-            inputs = {k: v.to(self._device) for k, v in inputs.items()}
-            outputs = self._model(**inputs)
+        use_autocast = str(self._device).startswith("cuda")
+        with torch.inference_mode():
+            with torch.autocast(device_type="cuda", enabled=use_autocast):
+                inputs = self._processor(
+                    text=labels,
+                    images=images,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=self._text_max_length,
+                )
+                inputs = {k: v.to(self._device) for k, v in inputs.items()}
+                outputs = self._model(**inputs)
 
-            if self._model_type == "siglip":
-                # Convert independent SigLIP scores to per-frame relative confidence
-                # so downstream UI/report percentages remain interpretable.
-                logits = outputs.logits_per_image  # (B, L)
-                probs = torch.sigmoid(logits)
-                denom = probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
-                probs = (probs / denom).cpu().numpy()
-            else:
-                logits = outputs.logits_per_image  # (B, L)
-                probs = logits.softmax(dim=-1).cpu().numpy()
+                if self._model_type == "siglip":
+                    # Convert independent SigLIP scores to per-frame relative confidence
+                    # so downstream percentages remain interpretable.
+                    logits = outputs.logits_per_image  # (B, L)
+                    probs = torch.sigmoid(logits)
+                    denom = probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+                    probs = (probs / denom).cpu().numpy()
+                else:
+                    logits = outputs.logits_per_image  # (B, L)
+                    probs = logits.softmax(dim=-1).cpu().numpy()
 
         return probs  # (B, L)
