@@ -33,7 +33,7 @@ pip install -e .
 pet-behavior-clip analyze my_dog.mp4
 
 pet-behavior-clip analyze my_dog.mp4 \
-  --labels "a picture of an animal moving,a picture of an animal eating,a picture of an animal resting" \
+  --labels "running,eating,walking,standing,sitting,lying" \
   --fps 2 \
   --smooth-window 7 \
   --smooth-method rolling_mean \
@@ -63,9 +63,12 @@ from pet_behavior_clip.anomaly import AnomalyDetector
 from pet_behavior_clip.report import generate_report
 
 labels = [
-    "a picture of an animal moving",
-    "a picture of an animal eating",
-    "a picture of an animal resting",
+  "running",
+  "eating",
+  "walking",
+  "standing",
+  "sitting",
+  "lying",
 ]
 
 reader = VideoReader("my_dog.mp4", sample_fps=1.0)

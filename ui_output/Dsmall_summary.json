@@ -3,7 +3,7 @@
   "anomaly_frames": 1,
   "anomaly_ratio": 0.0556,
   "duration_seconds": 16.35051282051282,
-  "worst_anomaly_timestamp": 0.0,
+  "worst_anomaly_timestamp": 0.9617948717948718,
   "method": "zscore",
   "threshold": 2.5,
   "sequence_aggregate": "none",

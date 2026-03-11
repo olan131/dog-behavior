@@ -19,9 +19,12 @@ logging.basicConfig(
 )
 
 _DEFAULT_LABELS = [
-    "moving",
+    "running",
     "eating",
-    "resting",
+    "walking",
+    "standing",
+    "sitting",
+    "lying",
 ]
 
 

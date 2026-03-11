@@ -10,7 +10,51 @@ from typing import Dict, Iterable, List, Sequence
 
 import pandas as pd
 
-_PREFIX = "a picture of an animal "
+_PREFIX = "a picture of a dog "
+_CUSTOM_PROMPTS: Dict[str, List[str]] = {
+    "running": [
+        "a dog running at full speed with legs extended",
+        "overhead view of a dog sprinting rapidly across the floor with limbs spread wide",
+        "a dog captured from the side running fast with motion blur on its legs",
+        "a dog with all four legs fully stretched out mid-stride moving at high speed",
+        "a dog in fast motion covering large distance across the room",
+    ],
+    "eating": [
+        "a dog eating food with its head lowered into a bowl",
+        "overhead view of a dog standing still with nose pointing down into a food bowl",
+        "a dog filmed from the side with its muzzle inside a bowl feeding",
+        "a dog with neck fully bent downward and mouth touching the floor or bowl",
+        "a dog stationary at a food bowl consuming food on the ground",
+    ],
+    "walking": [
+        "a dog walking slowly with legs in alternating stepping motion",
+        "overhead view of a dog moving at a calm steady pace across the floor",
+        "a dog filmed from the side taking slow deliberate steps forward",
+        "a dog with two diagonal legs lifted off the ground in a walking gait",
+        "a dog casually strolling around the room with gradual displacement",
+    ],
+    "standing": [
+        "a dog standing still with all four legs on the ground",
+        "overhead view of a dog stationary with a symmetric four-legged body outline",
+        "a dog filmed from the side standing upright without moving",
+        "a dog with all four paws evenly planted on the floor and body fully upright",
+        "a dog alert and motionless in a standing posture",
+    ],
+    "sitting": [
+        "a dog sitting with its bottom on the floor and front legs straight",
+        "overhead view of a dog in a sitting position with a triangular body silhouette",
+        "a dog filmed from the side with hindquarters lowered to the ground and head raised",
+        "a dog with rear end on the floor, front legs upright, and tail beside its body",
+        "a dog seated and resting with its hind legs folded beneath its body",
+    ],
+    "lying": [
+        "a dog lying down with its entire body flat on the floor",
+        "overhead view of a dog in a recumbent posture with a round flat body silhouette",
+        "a dog filmed from the side sprawled out on the ground with legs tucked",
+        "a dog with belly touching the floor, legs folded under its body, and chin resting down",
+        "a dog resting motionless on the ground with no limb movement",
+    ],
+}
 
 
 def build_label_prompt_result(
@@ -62,7 +106,14 @@ def aggregate_prompt_scores(
     prompt_map: dict[str, list[str]],
     reducer: str = "max",
 ) -> pd.DataFrame:
-    """Aggregate per-prompt scores into one score per base label."""
+    """Aggregate per-prompt scores into one score per base label.
+
+    Notes
+    -----
+    SigLIP scores are normalized over the *flattened prompt list*. After
+    reducing multiple prompts back to one column per base label, we normalize
+    rows again so confidence thresholds remain on an interpretable 0..1 scale.
+    """
     if reducer not in {"max", "mean"}:
         raise ValueError(f"Unsupported reducer '{reducer}'. Use 'max' or 'mean'.")
 
@@ -81,6 +132,12 @@ def aggregate_prompt_scores(
             out[label] = block.max(axis=1)
         else:
             out[label] = block.mean(axis=1)
+
+    label_cols = list(prompt_map.keys())
+    if label_cols:
+        row_sum = out[label_cols].sum(axis=1)
+        safe_sum = row_sum.where(row_sum > 0.0, 1.0)
+        out.loc[:, label_cols] = out[label_cols].div(safe_sum, axis=0)
 
     return out
 
@@ -105,14 +162,13 @@ def classify_with_template_max(
 
 
 def _template_prompts(label: str) -> List[str]:
-    """Create 5 deterministic prompt variants for a label."""
-    return [
-        f"a picture of an animal {label}",
-        f"an animal that is {label}",
-        f"a surveillance view of an animal {label}",
-        f"a top-down camera view of an animal {label}",
-        f"pet behavior: {label}",
-    ]
+    """Return custom prompt variants for a supported label."""
+    custom = _CUSTOM_PROMPTS.get(label.strip().lower())
+    if custom is not None:
+        return list(custom)
+    raise ValueError(
+        f"Unsupported label '{label}'. Supported labels: {sorted(_CUSTOM_PROMPTS.keys())}"
+    )
 
 
 def _normalize_label(label: str) -> str:

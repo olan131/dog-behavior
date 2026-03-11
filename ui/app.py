@@ -40,7 +40,7 @@ from pet_behavior_clip.video import VideoReader
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LABELS = (
-    "moving, eating, resting"
+    "running, eating, walking, standing, sitting, lying"
 )
 
 _OUT_DIR = Path("ui_output")
@@ -229,7 +229,7 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                     minimum=0.2,
                     maximum=0.9,
                     step=0.05,
-                    value=0.45,
+                    value=0.35,
                     label="Behavior confidence threshold",
                 )
                 label_smooth_seconds = gr.Slider(

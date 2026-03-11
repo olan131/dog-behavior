@@ -14,7 +14,7 @@ _UNCERTAIN_LABEL = "uncertain"
 
 def infer_frame_behaviors(
     detected: pd.DataFrame,
-    confidence_threshold: float = 0.45,
+    confidence_threshold: float = 0.35,
     anomaly_label: str = _ANOMALY_LABEL,
     uncertain_label: str = _UNCERTAIN_LABEL,
     score_cols: Sequence[str] | None = None,
@@ -173,8 +173,14 @@ def _resolve_score_cols(detected: pd.DataFrame) -> List[str]:
 
 def _pretty_label(raw_label: str) -> str:
     text = str(raw_label).strip()
-    if text.lower().startswith("a picture of an animal "):
-        return text[len("a picture of an animal ") :]
+    prefixes = (
+        "a picture of an animal ",
+        "a picture of a dog ",
+    )
+    lowered = text.lower()
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            return text[len(prefix) :]
     return text
 
 
