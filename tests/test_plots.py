@@ -23,6 +23,18 @@ def _make_detected(n: int = 20) -> pd.DataFrame:
     return df
 
 
+def _make_segments() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "start_s": [0.0, 2.0, 5.0],
+            "end_s": [1.0, 4.0, 5.0],
+            "duration_s": [1.0, 2.0, 0.0],
+            "label": ["anomaly", "running", "uncertain"],
+            "frames": [2, 3, 1],
+        }
+    )
+
+
 class TestPlots(unittest.TestCase):
 
     def test_timeline_returns_figure(self):
@@ -110,6 +122,30 @@ class TestPlots(unittest.TestCase):
         fig = plot_behavior_timeline(df)
         self.assertIsInstance(fig, plt.Figure)
         plt.close("all")
+
+    def test_segment_timeline_returns_figure(self):
+        import matplotlib.pyplot as plt
+        from pet_behavior_clip.plots import plot_behavior_segments_timeline
+
+        fig = plot_behavior_segments_timeline(_make_segments())
+        self.assertIsInstance(fig, plt.Figure)
+        plt.close("all")
+
+    def test_segment_timeline_saves_file(self):
+        import os
+        import tempfile
+        import matplotlib.pyplot as plt
+        from pet_behavior_clip.plots import plot_behavior_segments_timeline
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp = f.name
+        try:
+            plot_behavior_segments_timeline(_make_segments(), output_path=tmp)
+            self.assertTrue(os.path.exists(tmp))
+            self.assertGreater(os.path.getsize(tmp), 0)
+        finally:
+            plt.close("all")
+            os.unlink(tmp)
 
 
 if __name__ == "__main__":

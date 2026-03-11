@@ -43,6 +43,39 @@ class TestInferFrameBehaviors(unittest.TestCase):
         out = infer_frame_behaviors(df, confidence_threshold=0.45)
         self.assertEqual(out.loc[0, "behavior_label"], "uncertain")
 
+    def test_uncertain_when_margin_below_threshold(self):
+        df = pd.DataFrame(
+            {
+                "timestamp": [0.0],
+                "a picture of an animal moving": [0.52],
+                "a picture of an animal eating": [0.48],
+                "a picture of an animal resting": [0.00],
+                "anomaly_score": [0.0],
+                "is_anomaly": [False],
+            }
+        )
+        out = infer_frame_behaviors(
+            df,
+            confidence_threshold=0.35,
+            margin_threshold=0.10,
+        )
+        self.assertEqual(out.loc[0, "behavior_label"], "uncertain")
+
+    def test_behavior_margin_column_added(self):
+        df = pd.DataFrame(
+            {
+                "timestamp": [0.0],
+                "a picture of an animal moving": [0.70],
+                "a picture of an animal eating": [0.20],
+                "a picture of an animal resting": [0.10],
+                "anomaly_score": [0.0],
+                "is_anomaly": [False],
+            }
+        )
+        out = infer_frame_behaviors(df)
+        self.assertIn("behavior_margin", out.columns)
+        self.assertAlmostEqual(float(out.loc[0, "behavior_margin"]), 0.50, places=6)
+
 
 class TestSmoothAndSegments(unittest.TestCase):
 

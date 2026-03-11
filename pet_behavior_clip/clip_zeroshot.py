@@ -47,7 +47,7 @@ class SigLIPClassifier:
         self,
         model_name: str = _DEFAULT_MODEL,
         device: Optional[str] = None,
-        batch_size: int = 8,
+        batch_size: int = 16,
     ) -> None:
         self.model_name = model_name
         self.batch_size = batch_size
@@ -156,10 +156,13 @@ class SigLIPClassifier:
         if timestamps is None:
             timestamps = list(range(len(frames)))
 
+        # Encode all text labels once, then reuse across every image batch.
+        text_features = self._encode_text(list(labels))
+
         all_probs: List[np.ndarray] = []
         for i in range(0, len(frames), self.batch_size):
             batch_imgs = list(frames[i : i + self.batch_size])
-            probs = self._score_batch(batch_imgs, list(labels))
+            probs = self._score_batch(batch_imgs, text_features)
             all_probs.append(probs)
 
         probs_matrix = np.vstack(all_probs)  # (N, L)
@@ -171,8 +174,34 @@ class SigLIPClassifier:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _encode_text(self, labels: List[str]):
+        """Encode text labels once and return the feature tensor on device."""
+        import torch
+
+        use_autocast = str(self._device).startswith("cuda")
+        with torch.inference_mode():
+            with torch.autocast(device_type="cuda", enabled=use_autocast):
+                text_inputs = self._processor(
+                    text=labels,
+                    images=None,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=self._text_max_length,
+                )
+                text_inputs = {
+                    k: v.to(self._device)
+                    for k, v in text_inputs.items()
+                    if k in ("input_ids", "attention_mask")
+                }
+                text_features = self._model.get_text_features(**text_inputs)  # (L, D)
+                # Some HF model versions return a ModelOutput object; unwrap it.
+                if hasattr(text_features, "pooler_output"):
+                    text_features = text_features.pooler_output
+        return text_features
+
     def _score_batch(
-        self, images: List[Image.Image], labels: List[str]
+        self, images: List[Image.Image], text_features
     ) -> np.ndarray:
         """Return softmax probabilities for a batch of images. Shape: (B, L)."""
         import torch
@@ -180,22 +209,31 @@ class SigLIPClassifier:
         use_autocast = str(self._device).startswith("cuda")
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", enabled=use_autocast):
-                inputs = self._processor(
-                    text=labels,
+                image_inputs = self._processor(
+                    text=None,
                     images=images,
                     return_tensors="pt",
                     padding=True,
-                    truncation=True,
-                    max_length=self._text_max_length,
                 )
-                inputs = {k: v.to(self._device) for k, v in inputs.items()}
-                outputs = self._model(**inputs)
+                image_inputs = {
+                    k: v.to(self._device)
+                    for k, v in image_inputs.items()
+                    if k == "pixel_values"
+                }
+                image_features = self._model.get_image_features(**image_inputs)  # (B, D)
+                if hasattr(image_features, "pooler_output"):
+                    image_features = image_features.pooler_output
 
-                if self._model_type == "siglip":
-                    logits = outputs.logits_per_image  # (B, L)
-                    probs = logits.softmax(dim=-1).cpu().numpy()
+                # Replicate the model's internal dot-product + temperature scaling.
+                logit_scale = self._model.logit_scale.exp()
+                if hasattr(self._model, "logit_bias"):
+                    # SigLIP uses a per-pair bias term.
+                    logits = (
+                        image_features @ text_features.T
+                    ) * logit_scale + self._model.logit_bias
                 else:
-                    logits = outputs.logits_per_image  # (B, L)
-                    probs = logits.softmax(dim=-1).cpu().numpy()
+                    logits = (image_features @ text_features.T) * logit_scale
+
+                probs = logits.softmax(dim=-1).cpu().numpy()
 
         return probs  # (B, L)

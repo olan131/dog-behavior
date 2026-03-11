@@ -15,6 +15,7 @@ _UNCERTAIN_LABEL = "uncertain"
 def infer_frame_behaviors(
     detected: pd.DataFrame,
     confidence_threshold: float = 0.35,
+    margin_threshold: float = 0.10,
     anomaly_label: str = _ANOMALY_LABEL,
     uncertain_label: str = _UNCERTAIN_LABEL,
     score_cols: Sequence[str] | None = None,
@@ -24,6 +25,7 @@ def infer_frame_behaviors(
         result = detected.copy()
         result["behavior_raw"] = pd.Series(dtype="object")
         result["behavior_score"] = pd.Series(dtype=float)
+        result["behavior_margin"] = pd.Series(dtype=float)
         result["behavior_confident"] = pd.Series(dtype=bool)
         result["behavior_label"] = pd.Series(dtype="object")
         return result
@@ -35,18 +37,27 @@ def infer_frame_behaviors(
     score_df = detected[cols]
     max_scores = score_df.max(axis=1)
     max_labels = score_df.idxmax(axis=1).map(_pretty_label)
+    # Second-highest class score per frame for top-1 vs top-2 separation.
+    second_scores = score_df.apply(lambda row: row.nlargest(2).iloc[-1], axis=1)
+    margins = max_scores - second_scores
 
     result = detected.copy()
     result["behavior_raw"] = max_labels
     result["behavior_score"] = max_scores
+    result["behavior_margin"] = margins
     result["behavior_confident"] = max_scores >= confidence_threshold
 
     labels: List[str] = []
     anomaly_flags = result["is_anomaly"] if "is_anomaly" in result.columns else [False] * len(result)
-    for is_anomaly, raw, confident in zip(anomaly_flags, max_labels, result["behavior_confident"]):
+    for is_anomaly, raw, confident, margin_ok in zip(
+        anomaly_flags,
+        max_labels,
+        result["behavior_confident"],
+        margins >= margin_threshold,
+    ):
         if bool(is_anomaly):
             labels.append(anomaly_label)
-        elif bool(confident):
+        elif bool(confident) and bool(margin_ok):
             labels.append(raw)
         else:
             labels.append(uncertain_label)

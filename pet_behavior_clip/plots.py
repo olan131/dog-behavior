@@ -24,6 +24,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Patch
 
 matplotlib.use("Agg")  # non-interactive backend – safe for servers / CI
 
@@ -198,6 +199,80 @@ def plot_confidence_distribution(
     return fig
 
 
+def plot_behavior_segments_timeline(
+    segments: pd.DataFrame,
+    output_path: Optional[str | Path] = None,
+    title: str = "Behavior Timeline Segments",
+    figsize: tuple = (12, 2.8),
+) -> plt.Figure:
+    """Segment chart: contiguous behavior labels over time.
+
+    Parameters
+    ----------
+    segments:
+        DataFrame from ``build_behavior_segments`` with columns ``start_s``,
+        ``end_s``, and ``label``.
+    output_path:
+        Optional save path.
+    title:
+        Figure title.
+    figsize:
+        Figure size.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if segments.empty:
+        ax.text(0.5, 0.5, "No behavior segments", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        fig.tight_layout()
+        if output_path:
+            _save(fig, output_path)
+        return fig
+
+    ordered = segments.sort_values("start_s").reset_index(drop=True)
+    start_min = float(ordered["start_s"].min())
+    end_max = float(ordered["end_s"].max())
+    span = max(1e-6, end_max - start_min)
+    min_width = max(0.08, span * 0.005)
+
+    labels = [str(v) for v in ordered["label"].tolist()]
+    unique_labels = list(dict.fromkeys(labels))
+    color_map = _segment_color_map(unique_labels)
+
+    for _, row in ordered.iterrows():
+        start = float(row["start_s"])
+        end = float(row["end_s"])
+        label = str(row["label"])
+        width = max(min_width, end - start)
+        ax.barh(
+            y=0,
+            width=width,
+            left=start,
+            height=0.56,
+            color=color_map[label],
+            edgecolor="white",
+            linewidth=0.8,
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel("Time (s)")
+    ax.set_yticks([])
+    ax.set_xlim(start_min, end_max + min_width)
+    ax.grid(axis="x", alpha=0.25)
+
+    handles = [Patch(facecolor=color_map[name], label=name) for name in unique_labels]
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.25), ncol=min(6, len(handles)), fontsize=8)
+
+    fig.tight_layout()
+    if output_path:
+        _save(fig, output_path)
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -233,3 +308,19 @@ def _save(fig: plt.Figure, path: str | Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150, bbox_inches="tight")
     logger.info("Saved figure → %s", out)
+
+
+def _segment_color_map(labels: Sequence[str]) -> dict[str, str]:
+    color_map: dict[str, str] = {}
+    palette_i = 0
+    for label in labels:
+        lowered = label.lower()
+        if lowered == "anomaly":
+            color_map[label] = _ANOMALY_COLOR
+            continue
+        if lowered == "uncertain":
+            color_map[label] = "#95a5a6"
+            continue
+        color_map[label] = _PALETTE[palette_i % len(_PALETTE)]
+        palette_i += 1
+    return color_map

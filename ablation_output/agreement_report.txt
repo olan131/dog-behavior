@@ -1,15 +1,30 @@
-========================================================
-Manual Annotation Comparison Report
-========================================================
-Total annotated frames   : 28
+================================================================
+Manual Annotation Spot-Check Report
+System A: Single Prompt (D1 only, 6 prompts)
+System B: Multi Prompt  (5 variants + max, 30 prompts)
+Sampling: random
+================================================================
+Total annotated frames    : 11
 
-System A (raw labels)    : 1/28 = 3.6%
-System B (template+max)  : 12/28 = 42.9%
+System A  (single prompt) : 8/11 = 72.7%
+System B  (multi  prompt) : 4/11 = 36.4%
+Improvement               : -36.4 pp
 
-Per human-label breakdown:
-  moving/active       : A=1/1=100%  B=1/1=100%
-  resting             : A=0/17=0%  B=1/17=6%
-  eating/drinking     : A=0/10=0%  B=10/10=100%
+  Label           n   A ok    A%   B ok    B%
+  ----------------------------------------------------
+  running         5      3   60%      0    0%
+  eating          —      —     —      —     —
+  walking         —      —     —      —     —
+  standing        6      5   83%      4   67%
+  sitting         —      —     —      —     —
+  lying           —      —     —      —     —
 
-Note: spot-check only (random sample), not a full evaluation.
-========================================================
+  Group summary:
+    Dynamic (run/walk)        : A=3/5=60%  B=0/5=0%
+    Static  (sit/lie/stand)   : A=5/6=83%  B=4/6=67%
+    Eating                    : A=—  B=—
+
+Note: spot-check only — random sample, not a full evaluation.
+      Both systems use identical model weights and label space.
+      Difference reflects prompt multiplicity only.
+================================================================

@@ -20,11 +20,16 @@ _CUSTOM_PROMPTS: Dict[str, List[str]] = {
         "a dog in fast motion covering large distance across the room",
     ],
     "eating": [
-        "a dog eating food with its head lowered into a bowl",
-        "overhead view of a dog standing still with nose pointing down into a food bowl",
-        "a dog filmed from the side with its muzzle inside a bowl feeding",
-        "a dog with neck fully bent downward and mouth touching the floor or bowl",
-        "a dog stationary at a food bowl consuming food on the ground",
+        # D1: mouth contact + active eating motion
+        "a dog actively eating food with its mouth touching the bowl and jaw visibly moving",
+        # D2: overhead + jaw action — not just head near bowl
+        "overhead view of a dog whose jaw is opening and closing while chewing food from a bowl",
+        # D3: side view + explicit chewing motion
+        "a dog filmed from the side with its jaw actively chewing and tongue visible consuming food",
+        # D4: action-based — requires bite or lick motion, not pure neck angle
+        "a dog with its jaw wide open biting or licking food directly out of a bowl",
+        # D5: differentiator from sitting near bowl — active swallowing or chewing cycle
+        "a dog repeatedly dipping its snout into a bowl with visible chewing or licking motion",
     ],
     "walking": [
         "a dog walking slowly with legs in alternating stepping motion",
@@ -34,18 +39,28 @@ _CUSTOM_PROMPTS: Dict[str, List[str]] = {
         "a dog casually strolling around the room with gradual displacement",
     ],
     "standing": [
-        "a dog standing still with all four legs on the ground",
-        "overhead view of a dog stationary with a symmetric four-legged body outline",
-        "a dog filmed from the side standing upright without moving",
-        "a dog with all four paws evenly planted on the floor and body fully upright",
-        "a dog alert and motionless in a standing posture",
+        # D1: four legs on ground + body horizontal
+        "a dog standing still with all four legs on the ground and body parallel to the floor",
+        # D2: overhead — rectangular silhouette distinct from sitting triangle
+        "overhead view of a dog stationary with an elongated rectangular body outline and all four legs visible",
+        # D3: side — legs fully extended, belly off ground
+        "a dog filmed from the side standing upright with all four legs fully extended and belly off the floor",
+        # D4: weight evenly on all paws, spine level
+        "a dog with all four paws evenly planted on the floor, spine level, and body fully upright",
+        # D5: alert standing — distinguishes from lying and sitting
+        "a dog alert and motionless in a standing posture with legs straight and head level",
     ],
     "sitting": [
-        "a dog sitting with its bottom on the floor and front legs straight",
-        "overhead view of a dog in a sitting position with a triangular body silhouette",
-        "a dog filmed from the side with hindquarters lowered to the ground and head raised",
-        "a dog with rear end on the floor, front legs upright, and tail beside its body",
-        "a dog seated and resting with its hind legs folded beneath its body",
+        # D1: bottom-on-floor + head upright — contrasts with eating (head lowered)
+        "a dog sitting with its bottom on the floor, front legs straight, and head held upright",
+        # D2: overhead triangular silhouette unique to sitting posture
+        "overhead view of a dog in a sitting position with a compact triangular body silhouette and no jaw movement",
+        # D3: side view — head above back level distinguishes from eating
+        "a dog filmed from the side with hindquarters on the ground and head raised above its back",
+        # D4: specific leg geometry — rear legs folded, front legs vertical
+        "a dog with rear end on the floor, front legs vertical and upright, head erect, not interacting with food",
+        # D5: resting-sit, body still, gaze forward
+        "a dog seated quietly with ears alert, gaze forward, and no food bowl interaction",
     ],
     "lying": [
         "a dog lying down with its entire body flat on the floor",
@@ -55,7 +70,6 @@ _CUSTOM_PROMPTS: Dict[str, List[str]] = {
         "a dog resting motionless on the ground with no limb movement",
     ],
 }
-
 
 def build_label_prompt_result(
     labels: Iterable[str],
@@ -159,6 +173,25 @@ def classify_with_template_max(
     flat_prompts = flatten_prompt_map(prompt_map)
     raw_scores = classifier.classify_frames(frames, flat_prompts, timestamps)
     return aggregate_prompt_scores(raw_scores, prompt_map, reducer="max")
+
+
+def classify_with_single_prompt(
+    classifier,
+    frames: Sequence,
+    labels: Sequence[str],
+    timestamps: Sequence[float] | None = None,
+    camera_context: str = "",
+) -> pd.DataFrame:
+    """Run System-A style inference: one prompt per class (D1 variant only)."""
+    result = build_label_prompt_result(
+        labels=labels,
+        mode="template",
+        camera_context=camera_context,
+    )
+    single_map = {lbl: [variants[0]] for lbl, variants in result["prompt_map"].items()}
+    flat_prompts = flatten_prompt_map(single_map)
+    raw_scores = classifier.classify_frames(frames, flat_prompts, timestamps)
+    return aggregate_prompt_scores(raw_scores, single_map, reducer="max")
 
 
 def _template_prompts(label: str) -> List[str]:

@@ -21,7 +21,7 @@ import gradio as gr
 from pet_behavior_clip.anomaly import AnomalyDetector
 from pet_behavior_clip.clip_zeroshot import SigLIPClassifier
 from pet_behavior_clip.contextual import aggregate_sequence_scores, compute_ece_from_labeled_scores
-from pet_behavior_clip.prompt import classify_with_template_max
+from pet_behavior_clip.prompt import classify_with_template_max, classify_with_single_prompt
 from pet_behavior_clip.behavior_postprocess import (
     build_behavior_segments,
     infer_frame_behaviors,
@@ -31,6 +31,7 @@ from pet_behavior_clip.behavior_postprocess import (
 from pet_behavior_clip.plots import (
     plot_anomaly_heatmap,
     plot_behavior_timeline,
+    plot_behavior_segments_timeline,
     plot_confidence_distribution,
 )
 from pet_behavior_clip.report import generate_report
@@ -63,10 +64,13 @@ def run_analysis(
     sequence_aggregate: str,
     sequence_window: int,
     confidence_threshold: float,
+    margin_threshold: float,
     label_smooth_seconds: float,
     anomaly_alert_threshold: float,
+    prompt_mode: str = "Multi-prompt (5 variants + max)",
     progress: gr.Progress = gr.Progress(track_tqdm=True),
 ) -> Tuple[
+    Optional[str],
     str,
     str,
     str,
@@ -79,7 +83,7 @@ def run_analysis(
 ]:
     """Run local analysis and return UI outputs."""
     if video_file is None:
-        return "{}", "", "", None, None, None, "", "", ""
+        return None, "{}", "", "", None, None, None, "", "", ""
 
     labels: List[str] = [item.strip() for item in labels_text.split(",") if item.strip()]
     stem = Path(video_file).stem
@@ -93,12 +97,20 @@ def run_analysis(
 
     progress(0.2, desc="Running SigLIP inference...")
     classifier = SigLIPClassifier(model_name=model_name)
-    scores_df = classify_with_template_max(
-        classifier=classifier,
-        frames=frames,
-        labels=labels,
-        timestamps=timestamps,
-    )
+    if prompt_mode == "Single prompt (D1 only)":
+        scores_df = classify_with_single_prompt(
+            classifier=classifier,
+            frames=frames,
+            labels=labels,
+            timestamps=timestamps,
+        )
+    else:
+        scores_df = classify_with_template_max(
+            classifier=classifier,
+            frames=frames,
+            labels=labels,
+            timestamps=timestamps,
+        )
 
     scores_df = aggregate_sequence_scores(
         scores_df,
@@ -124,10 +136,10 @@ def run_analysis(
     json_path.write_text(json.dumps(summary_dict, indent=2, ensure_ascii=False), encoding="utf-8")
 
     progress(0.8, desc="Rendering plots...")
-    tl_path = _OUT_DIR / f"{stem}_timeline.png"
+    score_tl_path = _OUT_DIR / f"{stem}_timeline.png"
     hm_path = _OUT_DIR / f"{stem}_heatmap.png"
     dist_path = _OUT_DIR / f"{stem}_distribution.png"
-    plot_behavior_timeline(detected_df, output_path=tl_path)
+    plot_behavior_timeline(detected_df, output_path=score_tl_path)
     plot_anomaly_heatmap(detected_df, output_path=hm_path)
     plot_confidence_distribution(detected_df, output_path=dist_path)
 
@@ -144,6 +156,7 @@ def run_analysis(
     labeled_df = infer_frame_behaviors(
         detected_df,
         confidence_threshold=confidence_threshold,
+        margin_threshold=margin_threshold,
     )
     labeled_df = smooth_behavior_labels(
         labeled_df,
@@ -155,6 +168,9 @@ def run_analysis(
         labeled_df,
         label_col="behavior_smooth",
     )
+
+    behavior_tl_path = _OUT_DIR / f"{stem}_behavior_timeline.png"
+    plot_behavior_segments_timeline(segments_df, output_path=behavior_tl_path)
 
     behavior_md = summarize_behavior_results(
         labeled_df,
@@ -172,10 +188,11 @@ def run_analysis(
     progress(1.0, desc="Done")
     summary_text = json.dumps(summary_dict, indent=2, ensure_ascii=False)
     return (
+        str(behavior_tl_path),
         summary_text,
         report_md,
         behavior_md,
-        str(tl_path),
+        str(score_tl_path),
         str(hm_path),
         str(dist_path),
         str(csv_path),
@@ -232,6 +249,13 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                     value=0.35,
                     label="Behavior confidence threshold",
                 )
+                margin_threshold = gr.Slider(
+                    minimum=0.0,
+                    maximum=0.3,
+                    step=0.05,
+                    value=0.10,
+                    label="Margin threshold",
+                )
                 label_smooth_seconds = gr.Slider(
                     minimum=0.0,
                     maximum=5.0,
@@ -246,13 +270,23 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                     value=2.0,
                     label="Anomaly alert threshold",
                 )
+                prompt_mode = gr.Radio(
+                    choices=[
+                        "Multi-prompt (5 variants + max)",
+                        "Single prompt (D1 only)",
+                    ],
+                    value="Multi-prompt (5 variants + max)",
+                    label="Prompt mode",
+                    info="Multi-prompt: 5 descriptions per class, better for dynamic actions. Single prompt: 1 description per class, faster.",
+                )
                 run_btn = gr.Button("Run analysis", variant="primary")
 
             with gr.Column(scale=2):
+                behavior_timeline_out = gr.Image(label="Behavior Timeline (Segments)")
                 summary_out = gr.Code(label="Summary JSON", language="json")
                 report_out = gr.Markdown(label="Report")
                 behavior_out = gr.Markdown(label="Behavior Timeline Summary")
-                timeline_out = gr.Image(label="Timeline")
+                timeline_out = gr.Image(label="Score Timeline")
                 heatmap_out = gr.Image(label="Heatmap")
                 dist_out = gr.Image(label="Distribution")
                 csv_out = gr.File(label="Scores CSV")
@@ -273,10 +307,13 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                 sequence_aggregate,
                 sequence_window,
                 confidence_threshold,
+                margin_threshold,
                 label_smooth_seconds,
                 anomaly_alert_threshold,
+                prompt_mode,
             ],
             outputs=[
+                behavior_timeline_out,
                 summary_out,
                 report_out,
                 behavior_out,
