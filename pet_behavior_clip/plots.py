@@ -86,6 +86,7 @@ def plot_behavior_timeline(
 
     if output_path:
         _save(fig, output_path)
+    plt.close(fig)
     return fig
 
 
@@ -145,6 +146,7 @@ def plot_anomaly_heatmap(
     fig.tight_layout()
     if output_path:
         _save(fig, output_path)
+    plt.close(fig)
     return fig
 
 
@@ -196,6 +198,7 @@ def plot_confidence_distribution(
 
     if output_path:
         _save(fig, output_path)
+    plt.close(fig)
     return fig
 
 
@@ -231,6 +234,7 @@ def plot_behavior_segments_timeline(
         fig.tight_layout()
         if output_path:
             _save(fig, output_path)
+        plt.close(fig)
         return fig
 
     ordered = segments.sort_values("start_s").reset_index(drop=True)
@@ -270,6 +274,7 @@ def plot_behavior_segments_timeline(
     fig.tight_layout()
     if output_path:
         _save(fig, output_path)
+    plt.close(fig)
     return fig
 
 

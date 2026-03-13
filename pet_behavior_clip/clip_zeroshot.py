@@ -56,6 +56,7 @@ class SigLIPClassifier:
         self._model = None
         self._model_type: str = "siglip"
         self._text_max_length: Optional[int] = None
+        self._text_feature_cache: dict = {}
 
     # ------------------------------------------------------------------
     # Lazy model loading
@@ -127,6 +128,19 @@ class SigLIPClassifier:
     # Public API
     # ------------------------------------------------------------------
 
+    def warm_up(self, labels: Sequence[str]) -> None:
+        """Pre-encode and cache text embeddings for *labels*.
+
+        Call this before the first ``classify_frames()`` invocation to
+        move the text-encoding cost out of the frame-processing loop.
+        """
+        self._load()
+        self._encode_text(list(labels))
+
+    def clear_text_cache(self) -> None:
+        """Invalidate the cached text embeddings."""
+        self._text_feature_cache.clear()
+
     def classify_frames(
         self,
         frames: Sequence[Image.Image],
@@ -175,7 +189,16 @@ class SigLIPClassifier:
     # ------------------------------------------------------------------
 
     def _encode_text(self, labels: List[str]):
-        """Encode text labels once and return the feature tensor on device."""
+        """Encode text labels and return the feature tensor on device.
+
+        Results are cached per label list so that repeated calls with the
+        same prompts (e.g. across successive video chunks) skip the
+        text encoder entirely.
+        """
+        cache_key = tuple(labels)
+        if cache_key in self._text_feature_cache:
+            return self._text_feature_cache[cache_key]
+
         import torch
 
         use_autocast = str(self._device).startswith("cuda")
@@ -198,6 +221,9 @@ class SigLIPClassifier:
                 # Some HF model versions return a ModelOutput object; unwrap it.
                 if hasattr(text_features, "pooler_output"):
                     text_features = text_features.pooler_output
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+        self._text_feature_cache[cache_key] = text_features
         return text_features
 
     def _score_batch(
@@ -223,6 +249,7 @@ class SigLIPClassifier:
                 image_features = self._model.get_image_features(**image_inputs)  # (B, D)
                 if hasattr(image_features, "pooler_output"):
                     image_features = image_features.pooler_output
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
 
                 # Replicate the model's internal dot-product + temperature scaling.
                 logit_scale = self._model.logit_scale.exp()

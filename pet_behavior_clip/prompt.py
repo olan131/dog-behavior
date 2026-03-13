@@ -199,9 +199,14 @@ def _template_prompts(label: str) -> List[str]:
     custom = _CUSTOM_PROMPTS.get(label.strip().lower())
     if custom is not None:
         return list(custom)
-    raise ValueError(
-        f"Unsupported label '{label}'. Supported labels: {sorted(_CUSTOM_PROMPTS.keys())}"
-    )
+    normalised = label.strip().lower()
+    return [
+        f"{_PREFIX}{normalised}",
+        f"a dog {normalised} indoors",
+        f"a dog {normalised} on the floor",
+        f"overhead view of a dog {normalised}",
+        f"a dog filmed from the side while {normalised}",
+    ]
 
 
 def _normalize_label(label: str) -> str:

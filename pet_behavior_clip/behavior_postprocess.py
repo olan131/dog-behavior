@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Iterable, List, Sequence
 
+import numpy as np
 import pandas as pd
 
 _METADATA_COLS = {"timestamp", "anomaly_score", "is_anomaly"}
@@ -38,7 +39,9 @@ def infer_frame_behaviors(
     max_scores = score_df.max(axis=1)
     max_labels = score_df.idxmax(axis=1).map(_pretty_label)
     # Second-highest class score per frame for top-1 vs top-2 separation.
-    second_scores = score_df.apply(lambda row: row.nlargest(2).iloc[-1], axis=1)
+    vals = score_df.to_numpy()
+    sorted_vals = np.sort(vals, axis=1)
+    second_scores = pd.Series(sorted_vals[:, -2], index=score_df.index)
     margins = max_scores - second_scores
 
     result = detected.copy()

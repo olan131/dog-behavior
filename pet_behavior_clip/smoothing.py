@@ -95,6 +95,8 @@ def smooth_scores(
 
 def _gaussian_kernel(window: int, sigma: float) -> np.ndarray:
     """Return a normalised 1-D Gaussian kernel of the given *window* size."""
+    if window % 2 == 0:
+        window += 1
     half = window // 2
     x = np.arange(-half, half + 1, dtype=float)
     kernel = np.exp(-(x ** 2) / (2 * sigma ** 2))

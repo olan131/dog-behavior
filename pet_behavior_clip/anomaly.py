@@ -153,15 +153,18 @@ class AnomalyDetector:
         std = np.where(std == 0, 1.0, std)  # avoid division by zero
         return np.abs((data - mean) / std)
 
-    @staticmethod
-    def _iqr_deviations(data: np.ndarray) -> np.ndarray:
-        """Return per-cell IQR-unit deviations.  Shape: (N, L)."""
+    def _iqr_deviations(self, data: np.ndarray) -> np.ndarray:
+        """Return per-cell IQR-unit deviations.  Shape: (N, L).
+
+        NOTE: 使用 self.threshold 作為 IQR 倍率 k，
+        邊界為 [Q1 - k·IQR, Q3 + k·IQR]。
+        """
         q1 = np.percentile(data, 25, axis=0)
         q3 = np.percentile(data, 75, axis=0)
         iqr = q3 - q1
         iqr = np.where(iqr == 0, 1.0, iqr)  # avoid division by zero
-        lower = q1 - 1.5 * iqr
-        upper = q3 + 1.5 * iqr
+        lower = q1 - self.threshold * iqr
+        upper = q3 + self.threshold * iqr
         below = np.maximum(0, lower - data) / iqr
         above = np.maximum(0, data - upper) / iqr
         return np.maximum(below, above)

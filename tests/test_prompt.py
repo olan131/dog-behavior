@@ -60,9 +60,11 @@ class TestPromptTemplates(unittest.TestCase):
         self.assertEqual(prompts[0], "a dog running at full speed with legs extended")
         self.assertIn("motion blur on its legs", prompts[2])
 
-    def test_unknown_label_raises_value_error(self):
-        with self.assertRaises(ValueError):
-            build_label_prompt_result(["jumping"], mode="template")
+    def test_unknown_label_falls_back_to_generic_prompts(self):
+        result = build_label_prompt_result(["jumping"], mode="template")
+        prompts = result["prompt_map"]["jumping"]
+        self.assertEqual(len(prompts), 5)
+        self.assertTrue(all("jumping" in p for p in prompts))
 
 
 if __name__ == "__main__":

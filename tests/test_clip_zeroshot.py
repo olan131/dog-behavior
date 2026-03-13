@@ -75,6 +75,11 @@ class _FakeTensor:
 
     __radd__ = __add__
 
+    def norm(self, dim=None, keepdim=False):
+        return _FakeTensor(
+            np.linalg.norm(self._data, axis=dim, keepdims=keepdim)
+        )
+
     def __truediv__(self, other):
         if isinstance(other, _FakeTensor):
             return _FakeTensor(self._data / other._data)

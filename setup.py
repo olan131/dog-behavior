@@ -12,7 +12,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="pet-behavior-clip contributors",
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     packages=find_packages(exclude=["tests*", "ui"]),
     install_requires=[
         "opencv-python-headless>=4.8.0",
