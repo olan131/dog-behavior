@@ -28,4 +28,12 @@ env/
 # Model weights cache (HuggingFace)
 .cache/huggingface/
 
-.mp4
+# Generated outputs
+ablation_output/
+benchmark_output/
+experiment_results/
+ui_output/*
+!ui_output/.gitkeep
+
+# Local media assets
+*.mp4
