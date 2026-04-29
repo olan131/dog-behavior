@@ -37,3 +37,7 @@ ui_output/*
 
 # Local media assets
 *.mp4
+
+# Local test session logs
+test_output.txt
+test_result.txt

@@ -12,7 +12,6 @@ __all__ = [
     "plot_anomaly_heatmap",
     "plot_confidence_distribution",
     "generate_report",
-    "aggregate_sequence_scores",
     "compute_ece_from_labeled_scores",
 ]
 
@@ -31,7 +30,6 @@ def __getattr__(name: str):  # noqa: N807
             "plot_confidence_distribution",
         ),
         "generate_report": ("pet_behavior_clip.report", "generate_report"),
-        "aggregate_sequence_scores": ("pet_behavior_clip.contextual", "aggregate_sequence_scores"),
         "compute_ece_from_labeled_scores": ("pet_behavior_clip.contextual", "compute_ece_from_labeled_scores"),
     }
     if name in _lazy:

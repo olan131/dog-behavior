@@ -20,7 +20,7 @@ import gradio as gr
 
 from pet_behavior_clip.anomaly import AnomalyDetector
 from pet_behavior_clip.clip_zeroshot import SigLIPClassifier
-from pet_behavior_clip.contextual import aggregate_sequence_scores, compute_ece_from_labeled_scores
+from pet_behavior_clip.contextual import compute_ece_from_labeled_scores
 from pet_behavior_clip.prompt import classify_with_template_max, classify_with_single_prompt
 from pet_behavior_clip.behavior_postprocess import (
     build_behavior_segments,
@@ -61,8 +61,6 @@ def run_analysis(
     anomaly_method: str,
     threshold: float,
     model_name: str,
-    sequence_aggregate: str,
-    sequence_window: int,
     confidence_threshold: float,
     margin_threshold: float,
     label_smooth_seconds: float,
@@ -112,12 +110,6 @@ def run_analysis(
             timestamps=timestamps,
         )
 
-    scores_df = aggregate_sequence_scores(
-        scores_df,
-        mode=sequence_aggregate,
-        window=sequence_window,
-    )
-
     progress(0.5, desc="Smoothing scores...")
     smoothed_df = smooth_scores(scores_df, window=smooth_window, method=smooth_method)
 
@@ -125,8 +117,6 @@ def run_analysis(
     detector = AnomalyDetector(method=anomaly_method, threshold=threshold)
     detected_df = detector.detect(smoothed_df)
     summary_dict = detector.summary(detected_df)
-    summary_dict["sequence_aggregate"] = sequence_aggregate
-    summary_dict["sequence_window"] = sequence_window
     summary_dict["ece"] = compute_ece_from_labeled_scores(detected_df)
 
     csv_path = _OUT_DIR / f"{stem}_scores.csv"
@@ -236,12 +226,6 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                     label="Anomaly method",
                 )
                 threshold = gr.Slider(1.0, 5.0, step=0.5, value=2.5, label="Anomaly threshold")
-                sequence_aggregate = gr.Dropdown(
-                    choices=["none", "prob", "logit"],
-                    value="none",
-                    label="Sequence aggregation",
-                )
-                sequence_window = gr.Slider(3, 21, step=2, value=5, label="Sequence window")
                 confidence_threshold = gr.Slider(
                     minimum=0.2,
                     maximum=0.9,
@@ -304,8 +288,6 @@ Video -> SigLIP -> Temporal smoothing -> Anomaly detection.
                 anomaly_method,
                 threshold,
                 model_input,
-                sequence_aggregate,
-                sequence_window,
                 confidence_threshold,
                 margin_threshold,
                 label_smooth_seconds,

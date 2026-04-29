@@ -76,6 +76,22 @@ COL_MISS   = (110, 110, 110)   # grey
 COL_KEY    = (200, 200,  60)   # yellow
 
 
+def ensure_highgui_available() -> None:
+    """Fail fast with a clear message if OpenCV GUI support is unavailable."""
+    probe_title = "manual-label-highgui-probe"
+    try:
+        cv2.namedWindow(probe_title, cv2.WINDOW_NORMAL)
+        cv2.destroyWindow(probe_title)
+    except cv2.error as exc:
+        raise SystemExit(
+            "OpenCV GUI support is unavailable in the current environment. "
+            "manual_label.py requires a desktop-enabled OpenCV build for "
+            "cv2.namedWindow/cv2.imshow. Install `opencv-python` and remove "
+            "`opencv-python-headless`, then rerun the script. "
+            f"Original error: {exc}"
+        ) from exc
+
+
 # ── inference ─────────────────────────────────────────────────────────────────
 def run_systems(clf, frames, timestamps, reducer="max"):
     """Run SysA and SysB in a single forward pass.
@@ -382,6 +398,8 @@ def main():
         help="Frame sampling mode for annotation (default: random)",
     )
     args = parser.parse_args()
+
+    ensure_highgui_available()
 
     random.seed(args.seed)
     out_dir = Path(args.out)

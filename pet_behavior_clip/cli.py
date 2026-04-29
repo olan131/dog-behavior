@@ -90,20 +90,6 @@ def cli() -> None:
     show_default=True,
     help="HuggingFace model identifier.",
 )
-@click.option(
-    "--sequence-aggregate",
-    default="none",
-    show_default=True,
-    type=click.Choice(["none", "prob", "logit"]),
-    help="Temporal sequence aggregation mode before smoothing.",
-)
-@click.option(
-    "--sequence-window",
-    default=5,
-    show_default=True,
-    type=int,
-    help="Window size used by sequence aggregation modes.",
-)
 def analyze(
     video_path: str,
     labels: str,
@@ -114,8 +100,6 @@ def analyze(
     threshold: float,
     output_dir: str,
     model: str,
-    sequence_aggregate: str,
-    sequence_window: int,
 ) -> None:
     """Analyse VIDEO_PATH for pet behaviour anomalies."""
     label_list: List[str] = [l.strip() for l in labels.split(",") if l.strip()]
@@ -145,10 +129,7 @@ def analyze(
     # ------------------------------------------------------------------
     click.echo("[2/5] Running SigLIP zero-shot classification ...")
     from pet_behavior_clip.clip_zeroshot import SigLIPClassifier
-    from pet_behavior_clip.contextual import (
-        aggregate_sequence_scores,
-        compute_ece_from_labeled_scores,
-    )
+    from pet_behavior_clip.contextual import compute_ece_from_labeled_scores
     from pet_behavior_clip.prompt import classify_with_template_max
 
     classifier = SigLIPClassifier(model_name=model)
@@ -159,14 +140,6 @@ def analyze(
         timestamps=timestamps,
     )
 
-    scores_df = aggregate_sequence_scores(
-        scores_df,
-        mode=sequence_aggregate,
-        window=sequence_window,
-    )
-    click.echo(
-        f"       -> Sequence aggregation: {sequence_aggregate} (window={sequence_window})"
-    )
     click.echo(f"       → Scores shape: {scores_df.shape}")
 
     # ------------------------------------------------------------------
@@ -186,8 +159,6 @@ def analyze(
     detector = AnomalyDetector(method=anomaly_method, threshold=threshold)
     detected_df = detector.detect(smoothed_df)
     summary = detector.summary(detected_df)
-    summary["sequence_aggregate"] = sequence_aggregate
-    summary["sequence_window"] = sequence_window
     summary["ece"] = compute_ece_from_labeled_scores(detected_df)
     click.echo(
         f"       → {summary['anomaly_frames']}/{summary['total_frames']} frames anomalous "

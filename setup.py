@@ -15,7 +15,7 @@ setup(
     python_requires=">=3.10",
     packages=find_packages(exclude=["tests*", "ui"]),
     install_requires=[
-        "opencv-python-headless>=4.8.0",
+        "opencv-python>=4.8.0",
         "Pillow>=10.0.0",
         "numpy>=1.24.0",
         "pandas>=2.0.0",

@@ -1,31 +1,45 @@
-"""ablation2.py - Ablation 2: max vs mean Prompt Aggregation
+"""ablation2.py - Ablation 2: Temporal Smoothing (raw vs rolling_mean)
 
 Corresponds to Section 5.2 of the paper.
 
-Metric : per-class confidence score distribution (side-by-side boxplot)
-Question: Does mean aggregation dilute the best-matching prompt's signal,
-          collapsing inter-class confidence gaps?
+Goal
+====
+Compare per-frame confidence timelines before and after temporal smoothing:
+  - Condition A: raw scores (no smoothing)
+  - Condition B: rolling_mean smoothing with window=5
 
-Design:
-  max  aggregation — take the highest-scoring prompt per class (30→6)
-  mean aggregation — average all 5 prompt scores per class  (30→6)
-  Both followed by row normalisation so scores sum to 1.
+Design
+======
+1) Use the same sampled frames and timestamps for both conditions.
+2) Use the same zero-shot classifier and prompt setup (template + max aggregation).
+3) Only change one factor: temporal smoothing method.
+4) Produce two figures for direct visual comparison:
+   - Figure 2a: raw timeline
+   - Figure 2b: rolling_mean(window=5) timeline
+5) Compute readability-oriented quantitative metrics:
+   - Dominant-label switches (lower is more stable)
+   - Pairwise curve crossing count (lower is clearer separation)
+   - Walking-vs-standing crossing count (target ambiguous pair)
+   - Mean top-1 margin (higher is clearer dominance)
 
-Expected pattern:
-  max  → clear separation between dominant and non-dominant classes
-  mean → scores compressed toward uniform distribution (inter-class gap collapses)
-
-Usage:
+Usage
+=====
     python ablation2.py --video dog.mp4
-    python ablation2.py --video dog.mp4 --fps 2.0 --out results/
+    python ablation2.py --video dog.mp4 --fps 2.0 --window 5 --out ablation_output/
 
-Output:
-    ablation2_aggregation.png
+Outputs
+=======
+  ablation2_fig2a_raw.png
+  ablation2_fig2b_rolling_mean_w5.png
+  ablation2_metrics.csv
+  ablation2_pair_crossings.csv
+  ablation2_summary.txt
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import sys
 from pathlib import Path
 
@@ -40,26 +54,29 @@ sys.path.insert(0, str(_here.parent if _here.name == "pet_behavior_clip" else _h
 
 from pet_behavior_clip.video import VideoReader
 from pet_behavior_clip.clip_zeroshot import SigLIPClassifier
-from pet_behavior_clip.prompt import (
-    build_label_prompt_result,
-    flatten_prompt_map,
-    aggregate_prompt_scores,
-)
+from pet_behavior_clip.prompt import classify_with_template_max
+from pet_behavior_clip.smoothing import smooth_scores
 
-# ── constants ─────────────────────────────────────────────────────────────────
 LABELS = ["running", "eating", "walking", "standing", "sitting", "lying"]
-MODEL  = "google/siglip-so400m-patch14-224"
-FPS    = 2.0
+MODEL = "google/siglip-so400m-patch14-224"
+FPS = 2.0
+WINDOW = 5
 
-_PALETTE = ["#3498db", "#2ecc71", "#9b59b6", "#e67e22", "#1abc9c", "#e74c3c"]
+_PALETTE = {
+    "running": "#1f77b4",
+    "eating": "#ff7f0e",
+    "walking": "#2ca02c",
+    "standing": "#9467bd",
+    "sitting": "#d62728",
+    "lying": "#17becf",
+}
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
 def load_video(path: str, fps: float):
     reader = VideoReader(path, sample_fps=fps)
-    data   = reader.sample_frames()
+    data = reader.sample_frames()
     reader.release()
-    print(f"[video] {len(data)} frames @ {fps} fps  ← {path}")
+    print(f"[video] {len(data)} frames @ {fps} fps  <- {path}")
     return [img for _, img in data], [t for t, _ in data]
 
 
@@ -69,109 +86,177 @@ def load_model() -> SigLIPClassifier:
     return clf
 
 
-def run_inference(clf, frames, timestamps, reducer: str) -> pd.DataFrame:
-    """30 prompts (template mode), given reducer, then row-normalise."""
-    res = build_label_prompt_result(labels=LABELS, mode="template")
-    pm  = res["prompt_map"]
-    raw = clf.classify_frames(frames, flatten_prompt_map(pm), timestamps)
-    return aggregate_prompt_scores(raw, pm, reducer=reducer)
-
-
-# ── plotting ──────────────────────────────────────────────────────────────────
-def _draw_boxplot(ax, df: pd.DataFrame, title: str, show_ylabel: bool = True) -> None:
-    label_short = [l.capitalize() for l in LABELS]
-    data = [df[l].to_numpy() for l in LABELS]
-
-    bp = ax.boxplot(
-        data,
-        patch_artist=True,
-        notch=False,
-        tick_labels=label_short,
-        medianprops=dict(color="black", linewidth=1.8),
-        whiskerprops=dict(linewidth=1.2),
-        capprops=dict(linewidth=1.2),
-        flierprops=dict(marker="o", markersize=3, alpha=0.4),
+def run_raw_scores(clf: SigLIPClassifier, frames, timestamps) -> pd.DataFrame:
+    return classify_with_template_max(
+        classifier=clf,
+        frames=frames,
+        labels=LABELS,
+        timestamps=timestamps,
     )
-    for patch, c in zip(bp["boxes"], _PALETTE):
-        patch.set_facecolor(c)
-        patch.set_alpha(0.75)
 
-    # median value labels
-    for i, d in enumerate(data):
-        med = float(np.median(d))
-        ax.text(i + 1, med + 0.025, f"{med:.3f}",
-                ha="center", va="bottom", fontsize=8.5, fontweight="bold")
 
-    ax.set_title(title, fontsize=10)
-    if show_ylabel:
-        ax.set_ylabel("Confidence Score", fontsize=9)
+def _dominant_switches(df: pd.DataFrame) -> int:
+    seq = df[LABELS].idxmax(axis=1)
+    if len(seq) <= 1:
+        return 0
+    return int((seq != seq.shift(1)).sum() - 1)
+
+
+def _mean_top1_margin(df: pd.DataFrame) -> float:
+    vals = df[LABELS].to_numpy(dtype=float)
+    if vals.shape[1] < 2:
+        return 0.0
+    part = np.partition(vals, -2, axis=1)
+    top2 = part[:, -2]
+    top1 = part[:, -1]
+    return float(np.mean(top1 - top2))
+
+
+def _crossing_count(a: pd.Series, b: pd.Series) -> int:
+    diff = a.to_numpy(dtype=float) - b.to_numpy(dtype=float)
+    signs = np.sign(diff)
+
+    # Forward-fill zero-sign points to avoid counting tie plateaus as extra crossings.
+    for i in range(1, len(signs)):
+        if signs[i] == 0:
+            signs[i] = signs[i - 1]
+    for i in range(len(signs) - 2, -1, -1):
+        if signs[i] == 0:
+            signs[i] = signs[i + 1]
+
+    if len(signs) <= 1:
+        return 0
+    return int(np.sum(signs[1:] * signs[:-1] < 0))
+
+
+def pair_crossings(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for a, b in itertools.combinations(LABELS, 2):
+        rows.append(
+            {
+                "pair": f"{a}|{b}",
+                "crossings": _crossing_count(df[a], df[b]),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("pair").reset_index(drop=True)
+
+
+def summarize_metrics(raw_df: pd.DataFrame, smooth_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    raw_pair = pair_crossings(raw_df)
+    sm_pair = pair_crossings(smooth_df)
+
+    merged_pair = raw_pair.merge(sm_pair, on="pair", suffixes=("_raw", "_smooth"))
+    merged_pair["delta"] = merged_pair["crossings_smooth"] - merged_pair["crossings_raw"]
+    merged_pair["reduction_pct"] = np.where(
+        merged_pair["crossings_raw"] > 0,
+        (merged_pair["crossings_raw"] - merged_pair["crossings_smooth"]) / merged_pair["crossings_raw"] * 100.0,
+        0.0,
+    )
+
+    walk_stand = merged_pair.loc[merged_pair["pair"] == "walking|standing"]
+    ws_raw = int(walk_stand["crossings_raw"].iloc[0]) if not walk_stand.empty else 0
+    ws_smooth = int(walk_stand["crossings_smooth"].iloc[0]) if not walk_stand.empty else 0
+
+    total_raw = int(merged_pair["crossings_raw"].sum())
+    total_smooth = int(merged_pair["crossings_smooth"].sum())
+
+    metrics = pd.DataFrame(
+        [
+            {
+                "condition": "raw",
+                "dominant_switches": _dominant_switches(raw_df),
+                "total_pair_crossings": total_raw,
+                "walking_standing_crossings": ws_raw,
+                "mean_top1_margin": _mean_top1_margin(raw_df),
+            },
+            {
+                "condition": "rolling_mean_w5",
+                "dominant_switches": _dominant_switches(smooth_df),
+                "total_pair_crossings": total_smooth,
+                "walking_standing_crossings": ws_smooth,
+                "mean_top1_margin": _mean_top1_margin(smooth_df),
+            },
+        ]
+    )
+
+    return metrics, merged_pair.sort_values("delta").reset_index(drop=True)
+
+
+def _plot_timeline(scores: pd.DataFrame, out_path: Path, title: str) -> None:
+    ts = scores["timestamp"].to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    for lbl in LABELS:
+        ax.plot(ts, scores[lbl].to_numpy(dtype=float), lw=1.8, label=lbl, color=_PALETTE[lbl])
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Confidence")
     ax.set_ylim(0, 1)
-    ax.tick_params(axis="x", rotation=20)
-    ax.grid(axis="y", alpha=0.3)
-
-
-def plot_aggregation_comparison(
-    df_max:  pd.DataFrame,
-    df_mean: pd.DataFrame,
-    out_path: Path,
-) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
-
-    _draw_boxplot(axes[0], df_max,  "reducer = max  (Multi-Prompt best-match)",
-                  show_ylabel=True)
-    _draw_boxplot(axes[1], df_mean, "reducer = mean (Multi-Prompt average)",
-                  show_ylabel=False)
-
-    fig.suptitle(
-        "Ablation 2 — max vs mean Prompt Aggregation: Per-class Confidence Distribution\n"
-        "max preserves the best-matching signal; "
-        "mean dilutes it with low-matching variants",
-        fontsize=10,
-    )
+    ax.set_title(title, fontsize=11, loc="left")
+    ax.grid(alpha=0.3)
+    ax.legend(loc="upper right", fontsize=8)
     fig.tight_layout()
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"[plot] saved → {out_path}")
+    print(f"[plot] saved -> {out_path}")
 
 
-# ── console summary ───────────────────────────────────────────────────────────
-def print_summary(df_max: pd.DataFrame, df_mean: pd.DataFrame) -> None:
-    print(f"\n  {'Label':<12} {'max med':>9} {'mean med':>9} {'Δ median':>10}  "
-          f"{'max std':>8} {'mean std':>9}")
-    print(f"  {'-'*62}")
-    for l in LABELS:
-        mx_med  = df_max[l].median()
-        mn_med  = df_mean[l].median()
-        mx_std  = df_max[l].std()
-        mn_std  = df_mean[l].std()
-        delta   = mx_med - mn_med
-        print(f"  {l.capitalize():<12} {mx_med:>9.4f} {mn_med:>9.4f} "
-              f"{delta:>+10.4f}  {mx_std:>8.4f} {mn_std:>9.4f}")
+def write_summary(metrics: pd.DataFrame, pair_df: pd.DataFrame, out_path: Path) -> None:
+    row_raw = metrics.loc[metrics["condition"] == "raw"].iloc[0]
+    row_s = metrics.loc[metrics["condition"] == "rolling_mean_w5"].iloc[0]
 
-    # gap metric: std of class medians (higher = better inter-class separation)
-    gap_max  = float(np.std([df_max[l].median()  for l in LABELS]))
-    gap_mean = float(np.std([df_mean[l].median() for l in LABELS]))
-    print(f"\n  Inter-class median std:  max={gap_max:.4f}  mean={gap_mean:.4f}  "
-          f"(higher = better separation)")
-    dilution = (gap_max - gap_mean) / gap_max * 100 if gap_max > 0 else 0
-    print(f"  Mean aggregation dilution: {dilution:.1f}% gap loss vs max")
+    def pct_drop(v_raw: float, v_new: float) -> float:
+        if v_raw <= 0:
+            return 0.0
+        return (v_raw - v_new) / v_raw * 100.0
+
+    switch_drop = pct_drop(float(row_raw["dominant_switches"]), float(row_s["dominant_switches"]))
+    cross_drop = pct_drop(float(row_raw["total_pair_crossings"]), float(row_s["total_pair_crossings"]))
+    ws_drop = pct_drop(float(row_raw["walking_standing_crossings"]), float(row_s["walking_standing_crossings"]))
+    margin_gain = float(row_s["mean_top1_margin"]) - float(row_raw["mean_top1_margin"])
+
+    lines = [
+        "Ablation 2 Summary: Temporal Smoothing (raw vs rolling_mean window=5)",
+        "",
+        f"dominant_switches: raw={int(row_raw['dominant_switches'])}, smooth={int(row_s['dominant_switches'])}, drop={switch_drop:.1f}%",
+        f"total_pair_crossings: raw={int(row_raw['total_pair_crossings'])}, smooth={int(row_s['total_pair_crossings'])}, drop={cross_drop:.1f}%",
+        f"walking_standing_crossings: raw={int(row_raw['walking_standing_crossings'])}, smooth={int(row_s['walking_standing_crossings'])}, drop={ws_drop:.1f}%",
+        f"mean_top1_margin: raw={float(row_raw['mean_top1_margin']):.4f}, smooth={float(row_s['mean_top1_margin']):.4f}, gain={margin_gain:+.4f}",
+        "",
+        "Interpretation:",
+        "- Fewer dominant switches and pairwise crossings indicate better timeline readability.",
+        "- Fewer walking|standing crossings indicate reduced boundary ambiguity between adjacent classes.",
+        "- Larger top-1 margin indicates clearer behavior dominance per frame.",
+        "",
+        "Top 8 crossing reductions by pair:",
+    ]
+
+    top8 = pair_df.sort_values("delta").head(8)
+    for _, row in top8.iterrows():
+        lines.append(
+            f"- {row['pair']}: raw={int(row['crossings_raw'])} -> smooth={int(row['crossings_smooth'])} "
+            f"(delta={int(row['delta'])}, reduction={float(row['reduction_pct']):.1f}%)"
+        )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[summary] saved -> {out_path}")
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Ablation 2: max vs mean prompt aggregation boxplot"
+        description="Ablation 2: Temporal smoothing readability comparison (raw vs rolling_mean)."
     )
     parser.add_argument("--video", required=True, help="Input video path")
-    parser.add_argument("--fps",   type=float, default=FPS,
-                        help=f"Frame sampling rate (default: {FPS})")
-    parser.add_argument("--out",   default="ablation_output",
-                        help="Output directory (default: ablation_output/)")
+    parser.add_argument("--fps", type=float, default=FPS, help=f"Frame sampling rate (default: {FPS})")
+    parser.add_argument("--window", type=int, default=WINDOW, help=f"Rolling mean window (default: {WINDOW})")
+    parser.add_argument("--out", default="ablation_output", help="Output directory (default: ablation_output/)")
     args = parser.parse_args()
 
     out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== Loading video ===")
     frames, timestamps = load_video(args.video, args.fps)
@@ -179,17 +264,35 @@ def main() -> None:
     print("\n=== Loading SigLIP model ===")
     clf = load_model()
 
-    print("\n=== Running max aggregation inference ===")
-    df_max  = run_inference(clf, frames, timestamps, reducer="max")
+    print("\n=== Running raw inference (template + max) ===")
+    raw_df = run_raw_scores(clf, frames, timestamps)
 
-    print("\n=== Running mean aggregation inference ===")
-    df_mean = run_inference(clf, frames, timestamps, reducer="mean")
+    print(f"\n=== Applying rolling_mean smoothing (window={args.window}) ===")
+    smooth_df = smooth_scores(raw_df, window=args.window, method="rolling_mean")
 
-    print("\n=== Results ===")
-    print_summary(df_max, df_mean)
+    print("\n=== Saving Figure 2a / Figure 2b ===")
+    _plot_timeline(
+        raw_df,
+        out_dir / "ablation2_fig2a_raw.png",
+        "Figure 2a. Raw confidence timeline (no smoothing)",
+    )
+    _plot_timeline(
+        smooth_df,
+        out_dir / "ablation2_fig2b_rolling_mean_w5.png",
+        f"Figure 2b. Smoothed confidence timeline (rolling_mean, window={args.window})",
+    )
 
-    print("\n=== Saving figure ===")
-    plot_aggregation_comparison(df_max, df_mean, out_dir / "ablation2_aggregation.png")
+    print("\n=== Computing metrics ===")
+    metrics_df, pair_df = summarize_metrics(raw_df, smooth_df)
+    metrics_path = out_dir / "ablation2_metrics.csv"
+    pair_path = out_dir / "ablation2_pair_crossings.csv"
+    metrics_df.to_csv(metrics_path, index=False)
+    pair_df.to_csv(pair_path, index=False)
+    print(f"[csv] saved -> {metrics_path}")
+    print(f"[csv] saved -> {pair_path}")
+
+    summary_path = out_dir / "ablation2_summary.txt"
+    write_summary(metrics_df, pair_df, summary_path)
 
     print("\nDone.")
 

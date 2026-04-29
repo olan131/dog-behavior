@@ -20,16 +20,16 @@ _CUSTOM_PROMPTS: Dict[str, List[str]] = {
         "a dog in fast motion covering large distance across the room",
     ],
     "eating": [
-        # D1: mouth contact + active eating motion
-        "a dog actively eating food with its mouth touching the bowl and jaw visibly moving",
-        # D2: overhead + jaw action — not just head near bowl
-        "overhead view of a dog whose jaw is opening and closing while chewing food from a bowl",
-        # D3: side view + explicit chewing motion
-        "a dog filmed from the side with its jaw actively chewing and tongue visible consuming food",
-        # D4: action-based — requires bite or lick motion, not pure neck angle
-        "a dog with its jaw wide open biting or licking food directly out of a bowl",
-        # D5: differentiator from sitting near bowl — active swallowing or chewing cycle
-        "a dog repeatedly dipping its snout into a bowl with visible chewing or licking motion",
+        # D1: 靜態姿勢 — 頭低向碗 + 嘴接觸食物（提升安靜吃飯的召回）
+        "a dog with its head lowered into a food bowl, mouth in contact with food",
+        # D2: 俯拍靜態 — 頭朝下 + 碗的位置關係（不強制可見咀嚼）
+        "overhead view of a dog with its snout pointed straight down into a food bowl while eating",
+        # D3: 側面靜態 — 頸部前彎 + 嘴在碗內
+        "a dog filmed from the side with its neck bent forward and snout inside a food bowl",
+        # D4: 動態咀嚼（保留動作特徵 prompt，維持明顯咀嚼場景的匹配度）
+        "a dog actively chewing food with jaw movement visible near a food bowl",
+        # D5: 折中 — 姿勢+動作，明確不是 sitting idle
+        "a dog leaning forward over a food bowl with body angled down, actively consuming food",
     ],
     "walking": [
         "a dog walking slowly with legs in alternating stepping motion",
@@ -53,8 +53,8 @@ _CUSTOM_PROMPTS: Dict[str, List[str]] = {
     "sitting": [
         # D1: bottom-on-floor + head upright — contrasts with eating (head lowered)
         "a dog sitting with its bottom on the floor, front legs straight, and head held upright",
-        # D2: overhead triangular silhouette unique to sitting posture
-        "overhead view of a dog in a sitting position with a compact triangular body silhouette and no jaw movement",
+        # D2: 俯拍 — 強化「頭朝上 + 無食物互動」與 eating 區分
+        "overhead view of a dog in a sitting position with head up and no food bowl interaction",
         # D3: side view — head above back level distinguishes from eating
         "a dog filmed from the side with hindquarters on the ground and head raised above its back",
         # D4: specific leg geometry — rear legs folded, front legs vertical
